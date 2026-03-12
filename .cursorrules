@@ -1,0 +1,120 @@
+# ACF Image Aspect Ratio Crop – Cursor Rules
+
+## Project Overview
+
+This is a WordPress plugin that extends Advanced Custom Fields (ACF) with an image field supporting aspect-ratio cropping. It supports three modes: aspect ratio, pixel size, and free crop.
+
+## Key Technologies
+
+- **PHP**: WordPress 4.9+, PHP 5.6+, ACF 5.8+
+- **JavaScript**: jQuery, ACF JS framework (acf.field.extend), Backbone, axios, Cropper.js
+- **Styles**: SCSS with Sass, PostCSS (autoprefixer)
+- **Build**: Webpack 4, Babel (@babel/preset-env)
+- **Testing**: Codeception (WP-Browser), acceptance + unit + wpunit suites
+- **Environment**: Docker (docker-compose), Composer, npm
+
+## Coding Style
+
+### PHP
+
+- **Indentation**: 4 spaces
+- **Naming**: snake_case for functions/variables; classes use `npx_acf_` prefix (e.g. `npx_acf_plugin_image_aspect_ratio_crop`)
+- **Brackets**: Opening braces on same line; use `exit()` not `die()` for early exits
+- **Comments**: Use `//` for single-line; match ACF-style docblocks for `@type`, `@date`, `@since`, `@param`, `@return`
+- **Strings**: Single quotes for non-interpolated strings
+- **Arrays**: Trailing commas (Prettier with trailingCommaPHP)
+- **ABSPATH**: Always guard plugin files with `if (!defined('ABSPATH')) { exit(); }`
+
+### JavaScript
+
+- **Indentation**: 2 spaces
+- **Quotes**: Single quotes
+- **Trailing commas**: Yes (Prettier)
+- **Variables**: Prefer `let`/`const`; `var` acceptable in jQuery/ACF legacy patterns
+- **Wrapper**: Field code wrapped in `(function($) { ... })(jQuery)` for ACF fields
+- **ACF pattern**: Extend `acf.field.extend` with `type`, `$el`, `$input`, `$img`, `actions`, `events`
+
+### SCSS
+
+- **Indentation**: 4 spaces
+- **Nesting**: Use for component scoping (e.g. `.acf-field-image-aspect-ratio-crop`)
+- **BEM-style**: Prefer `.acf-image-aspect-ratio-crop-modal-heading-text` over deep nesting
+- **Imports**: Use `~` for node_modules (e.g. `~cropperjs/dist/cropper`)
+
+## Project Structure
+
+```
+/
+├── acf-image-aspect-ratio-crop.php   # Main plugin bootstrap
+├── fields/                          # ACF field classes
+│   └── class-npx-acf-field-image-aspect-ratio-crop-v5.php
+├── assets/
+│   ├── src/                         # Source (JS, SCSS, SVG)
+│   │   ├── index.js                 # Entry point
+│   │   ├── input.js                 # Field logic
+│   │   ├── input.scss
+│   │   └── field-group-admin.js
+│   └── dist/                        # Webpack output (input-script.js, input-style.css)
+├── tests/                           # Codeception
+│   ├── acceptance/
+│   ├── unit/
+│   ├── _data/
+│   └── _support/
+├── webpack.config.js
+├── composer.json
+├── package.json
+└── docker-compose.yml
+```
+
+## Conventions
+
+### WordPress
+
+- **Text domain**: `acf-image-aspect-ratio-crop` for all translatable strings
+- **REST API**: Namespace `aiarc/v1`; endpoints `/upload`, `/crop`, `/get/{id}`
+- **Nonce**: `aiarc` for X-Aiarc-Nonce
+- **Meta keys**: Prefix `acf_image_aspect_ratio_crop_` (e.g. `acf_image_aspect_ratio_crop_original_image_id`)
+
+### PHP
+
+- Field classes extend `acf_field` and receive `$settings` in constructor
+- Use `acf_render_field_setting()` for field options
+- Use `wp_localize_script()` for passing data to JS (`aiarc`, `aiarc_settings`, `aiarc_translations`)
+
+### JavaScript
+
+- Use `this.$field`, `this.$el`, `this.$input`, `this.$img` for DOM references
+- Get field config via `acf.get_data(this.$el)` or `$(el).data('key')`
+- AJAX: REST API when `rest_api_compat` is off; `ajaxurl` + `admin-ajax.php` when on
+
+### Build
+
+- Run `npm run build` (or webpack) to produce `assets/dist/input-script.js` and `input-style.css`
+- Dev: `mode: 'development'`, `devtool: 'source-map'`
+
+## Testing
+
+- **Acceptance**: `vendor/bin/codecept run acceptance --fail-fast`
+- **Unit**: `vendor/bin/codecept run unit`
+- Use `$I->loadSessionSnapshot('login')` for multi-step flows
+- Tests in `tests/acceptance/`, `tests/unit/`
+- Helpers and config in `tests/_support/`, `codeception.dist.yml`
+
+## Documentation & Maintenance
+
+- Update `README.md` and `readme.txt` after code changes
+- Keep `CHANGELOG.md` (or equivalent) for notable changes
+- Maintain `AGENTS.md` for AI/agent context
+- Document behavior in the wiki where applicable
+
+## Ambiguity & Clarification
+
+- **Ask before assuming** when a request could affect:
+  - Cropping modes (aspect ratio vs pixel size vs free crop)
+  - ACF/WP compatibility (versions, Polylang, WPML, REST vs ajax)
+  - Front-end vs admin-only behavior
+- **Confirm scope** for changes that touch:
+  - REST API vs admin-ajax paths
+  - Multiple ACF contexts (post, options, taxonomy, front-end form)
+- **Verify environment** when debugging: Docker vs local, PHP/Node versions
+- If the desired behavior is unclear, list options and ask which applies

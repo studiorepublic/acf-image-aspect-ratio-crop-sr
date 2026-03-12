@@ -59,6 +59,10 @@ Crop can be done freely, there are no aspect ratio limitations.
 
 You can download the plugin from the [WordPress plugin directory](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/), or download the latest release as a zip file from [GitHub releases](https://github.com/joppuyo/acf-image-aspect-ratio-crop/releases).
 
+### Updates from GitHub
+
+When installed from a GitHub release (e.g. from [studiorepublic/acf-image-aspect-ratio-crop](https://github.com/studiorepublic/acf-image-aspect-ratio-crop)), the plugin checks for updates automatically via [yahnis-elsts/plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker). New releases appear in the WordPress Plugins screen.
+
 ## Requirements
 
 - WordPress 4.9 or later

@@ -5,6 +5,9 @@
   "author": "Johannes Siipola <johannes@siipo.la>",
   "license": "GPL-2.0-or-later",
   "private": false,
+  "scripts": {
+    "build": "webpack-cli --mode production"
+  },
   "dependencies": {
     "@babel/core": "^7.4.5",
     "@babel/polyfill": "^7.4.4",

@@ -22,6 +22,23 @@ if (!defined('ABSPATH')) {
     exit();
 }
 
+define('AIARC_PLUGIN_FILE', __FILE__);
+
+// Plugin Update Checker (GitHub releases via yahnis-elsts/plugin-update-checker)
+$aiarc_autoload = __DIR__ . '/vendor/autoload.php';
+if (file_exists($aiarc_autoload)) {
+    require_once $aiarc_autoload;
+    if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
+        $repo_url = apply_filters('aiarc_update_repo_url', 'https://github.com/studiorepublic/acf-image-aspect-ratio-crop');
+        $checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+            $repo_url,
+            AIARC_PLUGIN_FILE,
+            'acf-image-aspect-ratio-crop'
+        );
+        $checker->getVcsApi()->enableReleaseAssets('/\.zip$/');
+    }
+}
+
 class npx_acf_plugin_image_aspect_ratio_crop
 {
     // vars
