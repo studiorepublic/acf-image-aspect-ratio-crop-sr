@@ -2,11 +2,11 @@
 
 /*
 Plugin Name: Advanced Custom Fields: Image Aspect Ratio Crop
-Plugin URI: https://github.com/joppuyo/acf-image-aspect-ratio-crop
+Plugin URI: https://github.com/studiorepublic/acf-image-aspect-ratio-crop
 Description: ACF field that allows user to crop image to a specific aspect ratio or pixel size
 Version: 0.1.0
-Author: Johannes Siipola
-Author URI: https://siipo.la
+Author: Studio Republic - Based on the work of Johannes Siipola
+Author URI: https://www.studiorepublic.com
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 Text Domain: acf-image-aspect-ratio-crop
@@ -23,6 +23,127 @@ if (!defined('ABSPATH')) {
 }
 
 define('AIARC_PLUGIN_FILE', __FILE__);
+
+/**
+ * Build preview URL for crop metadata (admin preview only).
+ *
+ * @param array $crop_data Array with attachment_id and crop (x, y, width, height).
+ * @return string URL or empty string if invalid.
+ */
+function aiarc_get_preview_url($crop_data)
+{
+    if (
+        empty($crop_data['attachment_id']) ||
+        empty($crop_data['crop']) ||
+        !isset($crop_data['crop']['x'], $crop_data['crop']['y'], $crop_data['crop']['width'], $crop_data['crop']['height'])
+    ) {
+        return '';
+    }
+    $id = (int) $crop_data['attachment_id'];
+    $c = $crop_data['crop'];
+    $url = add_query_arg(
+        [
+            'id' => $id,
+            'x' => (int) $c['x'],
+            'y' => (int) $c['y'],
+            'w' => (int) $c['width'],
+            'h' => (int) $c['height'],
+            '_wpnonce' => wp_create_nonce('wp_rest'),
+        ],
+        rest_url('aiarc/v1/preview')
+    );
+    return $url;
+}
+
+/**
+ * Generate cropped image URL from crop metadata (for Timber/front-end).
+ * Crops the original image and caches the result in uploads.
+ *
+ * @param array $crop_data Array with attachment_id, original_url, crop (x, y, width, height).
+ * @param int $max_width Optional. Max width to scale down to (preserves aspect ratio).
+ * @param int $max_height Optional. Max height to scale down to.
+ * @return string URL of cropped image, or original_url on failure.
+ */
+function aiarc_crop_url($crop_data, $max_width = 0, $max_height = 0)
+{
+    if (
+        empty($crop_data['attachment_id']) ||
+        empty($crop_data['crop']) ||
+        !isset($crop_data['crop']['x'], $crop_data['crop']['y'], $crop_data['crop']['width'], $crop_data['crop']['height'])
+    ) {
+        return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    $id = (int) $crop_data['attachment_id'];
+    $c = $crop_data['crop'];
+    $x = (int) $c['x'];
+    $y = (int) $c['y'];
+    $w = (int) $c['width'];
+    $h = (int) $c['height'];
+    $max_width = max(0, (int) $max_width);
+    $max_height = max(0, (int) $max_height);
+
+    $cache_key = 'aiarc_' . md5($id . $x . $y . $w . $h . $max_width . $max_height);
+
+    $image_data = wp_get_attachment_metadata($id);
+    if (!$image_data || empty($image_data['file'])) {
+        return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    $upload_dir = wp_upload_dir();
+    $base_dir = $upload_dir['basedir'] . '/aiarc-cache';
+    $base_url = $upload_dir['baseurl'] . '/aiarc-cache';
+    $ext = pathinfo($image_data['file'], PATHINFO_EXTENSION);
+    $ext = ($ext === 'jpg' || $ext === 'jpeg') ? 'jpg' : (($ext === 'png') ? 'png' : 'gif');
+    $filename = $cache_key . '.' . $ext;
+    $file_path = $base_dir . '/' . $filename;
+
+    if (file_exists($file_path)) {
+        return $base_url . '/' . $filename;
+    }
+
+    $source_path = $upload_dir['basedir'] . '/' . $image_data['file'];
+    if (!file_exists($source_path)) {
+        return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    $image = wp_get_image_editor($source_path);
+    if (is_wp_error($image)) {
+        return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    $image->crop($x, $y, $w, $h);
+
+    if ($max_width > 0 || $max_height > 0) {
+        $size = $image->get_size();
+        if ($size) {
+            $dw = $size['width'];
+            $dh = $size['height'];
+            if ($max_width > 0 && $dw > $max_width) {
+                $ratio = $max_width / $dw;
+                $dw = $max_width;
+                $dh = (int) round($dh * $ratio);
+            }
+            if ($max_height > 0 && $dh > $max_height) {
+                $ratio = $max_height / $dh;
+                $dh = $max_height;
+                $dw = (int) round($dw * $ratio);
+            }
+            $image->resize($dw, $dh, false);
+        }
+    }
+
+    if (!wp_mkdir_p($base_dir)) {
+        return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    $saved = $image->save($file_path);
+    if (is_wp_error($saved)) {
+        return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    return $base_url . '/' . $filename;
+}
 
 // Plugin Update Checker (GitHub releases via yahnis-elsts/plugin-update-checker)
 $aiarc_autoload = __DIR__ . '/vendor/autoload.php';
@@ -88,112 +209,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
 
         add_action('rest_api_init', [$this, 'rest_api_init']);
 
-        add_action(
-            'acf/save_post',
-            function ($post_id) {
-                if ($post_id === 'options' && !empty($_GET['page'])) {
-                    // Options page needs an unique id
-                    $post_id = $_GET['page'];
-                }
-
-                $temp_post_id = !empty($_POST['aiarc_temp_post_id']) ? $_POST['aiarc_temp_post_id'] : null;
-
-                // Bail early if we don't have data to process
-                if (empty($temp_post_id)) {
-                    return;
-                }
-
-                // Let's find all posts with temp post id
-                $temp_attachments = get_posts([
-                    'post_type' => 'attachment',
-                    'posts_per_page' => -1,
-                    'meta_query' => [
-                        [
-                            'key' => 'acf_image_aspect_ratio_crop_temp_post_id',
-                            'value' => $temp_post_id,
-                            'compare' => '=',
-                        ],
-                    ],
-                ]);
-
-                foreach ($temp_attachments as $attachment) {
-                    // Attach parent post id to temporary attachments
-                    update_post_meta(
-                        $attachment->ID,
-                        'acf_image_aspect_ratio_crop_parent_post_id',
-                        $post_id
-                    );
-                    // Remove temporary data
-                    delete_post_meta(
-                        $attachment->ID,
-                        'acf_image_aspect_ratio_crop_temp_post_id'
-                    );
-                    delete_post_meta(
-                        $attachment->ID,
-                        'acf_image_aspect_ratio_crop_timestamp'
-                    );
-                }
-
-                // Bail early if unused attachment deletion is disabled
-                if (!$this->user_settings['delete_unused']) {
-                    return;
-                }
-
-                $post_attachments = get_posts([
-                    'post_type' => 'attachment',
-                    'posts_per_page' => -1,
-                    'meta_query' => [
-                        [
-                            'key' =>
-                                'acf_image_aspect_ratio_crop_parent_post_id',
-                            'value' => $post_id,
-                            'compare' => '=',
-                        ],
-                    ],
-                ]);
-
-                // Find crop field names
-                // Compare crop field names to post input
-                // Delete unused posts
-
-                $current_post = get_post($post_id);
-
-                if (function_exists('parse_blocks') && $current_post) {
-                    $this->debug('parse blocks');
-                    $blocks = parse_blocks($current_post->post_content);
-                    $this->debug($blocks);
-                }
-
-                $this->debug('found following post attachments');
-                $this->debug($post_attachments);
-
-                $this->debug('found following fields');
-                $fields = $_POST['acf'];
-                $this->debug($fields);
-
-                $preserve_ids = [];
-
-                $this->check_fields($fields, $preserve_ids);
-
-                $post_attachment_ids = array_map(function ($attachment) {
-                    return $attachment->ID;
-                }, $post_attachments);
-
-                $delete_ids = array_diff($post_attachment_ids, $preserve_ids);
-
-                $this->debug('preserve ids');
-                $this->debug($preserve_ids);
-                $this->debug('all ids');
-                $this->debug($post_attachment_ids);
-                $this->debug('delete ids');
-                $this->debug($delete_ids);
-
-                foreach ($delete_ids as $delete_id) {
-                    wp_delete_attachment($delete_id, true);
-                }
-            },
-            15
-        );
+        // No acf/save_post handler: we store crop metadata only, no cropped image attachments.
 
         add_action('wp_ajax_acf_image_aspect_ratio_crop_crop', function () {
             // WTF WordPress
@@ -201,9 +217,13 @@ class npx_acf_plugin_image_aspect_ratio_crop
 
             $data = json_decode($post['data'], true);
 
-            $attachment_id = $this->create_crop($data);
-
-            wp_send_json(['id' => $attachment_id]);
+            $metadata = $this->build_crop_metadata($data);
+            if (is_wp_error($metadata)) {
+                $status = $metadata->get_error_data()['status'] ?? 400;
+                wp_send_json_error(['message' => $metadata->get_error_message()], $status);
+                wp_die();
+            }
+            wp_send_json($metadata);
             wp_die();
         });
 
@@ -249,7 +269,9 @@ class npx_acf_plugin_image_aspect_ratio_crop
             2
         );
 
-        // Enable Media Replace compat: if file is replaced using Enable Media Replace, wipe the coordinate data
+        // Enable Media Replace compat: when original image file is replaced, legacy cropped
+        // attachments (pre-metadata-only) had their coordinates meta wiped. New format stores
+        // crop in post meta; clearing would require finding all fields referencing this attachment.
         add_filter('wp_handle_upload', function ($data) {
             $id = attachment_url_to_postid($data['url']);
             if ($id !== 0) {
@@ -258,8 +280,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
                     'posts_per_page' => -1,
                     'meta_query' => [
                         [
-                            'key' =>
-                                'acf_image_aspect_ratio_crop_original_image_id',
+                            'key' => 'acf_image_aspect_ratio_crop_original_image_id',
                             'value' => $id,
                             'compare' => '=',
                         ],
@@ -269,13 +290,8 @@ class npx_acf_plugin_image_aspect_ratio_crop
                         ],
                     ],
                 ]);
-                if (!empty($posts)) {
-                    foreach ($posts as $post) {
-                        delete_post_meta(
-                            $post->ID,
-                            'acf_image_aspect_ratio_crop_coordinates'
-                        );
-                    }
+                foreach ($posts as $post) {
+                    delete_post_meta($post->ID, 'acf_image_aspect_ratio_crop_coordinates');
                 }
             }
             return $data;
@@ -392,10 +408,10 @@ class npx_acf_plugin_image_aspect_ratio_crop
                             $info
                         ) use ($resolve) {
                             $value = $resolve($root, $args, $context, $info);
-                            return WPGraphQL\Data\DataSource::resolve_post_object(
-                                (int) $value,
-                                $context
-                            );
+                            $id = is_array($value) && !empty($value['attachment_id'])
+                                ? (int) $value['attachment_id']
+                                : (int) $value;
+                            return $id ? WPGraphQL\Data\DataSource::resolve_post_object($id, $context) : null;
                         },
                     ];
                 }
@@ -433,6 +449,58 @@ class npx_acf_plugin_image_aspect_ratio_crop
             10,
             3
         );
+
+        add_filter('timber/twig/filters', [$this, 'register_timber_twig_filter']);
+
+        add_filter('rest_pre_serve_request', [$this, 'rest_pre_serve_preview'], 10, 4);
+    }
+
+    /**
+     * Serve binary image for preview endpoint (REST API JSON-encodes by default).
+     *
+     * @param bool $served Whether the request has been served.
+     * @param WP_HTTP_Response $result Response object.
+     * @param WP_REST_Request $request Request object.
+     * @param WP_REST_Server $server REST server.
+     * @return bool
+     */
+    public function rest_pre_serve_preview($served, $result, $request, $server)
+    {
+        if (strpos($request->get_route(), 'aiarc/v1/preview') === false) {
+            return $served;
+        }
+
+        $data = $result->get_data();
+        if (!is_string($data) || empty($data)) {
+            return $served;
+        }
+
+        $headers = $result->get_headers();
+        status_header($result->get_status());
+        foreach ($headers as $key => $value) {
+            header(sprintf('%s: %s', $key, $value));
+        }
+        echo $data;
+        return true;
+    }
+
+    /**
+     * Register aiarc_crop Twig filter for Timber.
+     *
+     * @param array $filters
+     * @return array
+     */
+    public function register_timber_twig_filter($filters)
+    {
+        $filters['aiarc_crop'] = [
+            'callable' => function ($crop_data, $max_width = 0, $max_height = 0) {
+                if (!is_array($crop_data)) {
+                    return '';
+                }
+                return aiarc_crop_url($crop_data, (int) $max_width, (int) $max_height);
+            },
+        ];
+        return $filters;
     }
 
     /*
@@ -732,8 +800,6 @@ class npx_acf_plugin_image_aspect_ratio_crop
         $from,
         $to
     ) {
-        // When creating translated duplicated attachment if there is a translated version of
-        // the original image, use it
         if (get_post_type($from) === 'attachment') {
             if ($key === 'acf_image_aspect_ratio_crop_original_image_id') {
                 return pll_get_post($value, $lang)
@@ -742,20 +808,21 @@ class npx_acf_plugin_image_aspect_ratio_crop
             }
         }
 
-        // When creating translated copy of any post if there is a translated version of the
-        // cropped image, use it
-        if (get_post_type($from) !== 'attachment') {
+        if (get_post_type($from) !== 'attachment' && function_exists('get_field_object')) {
             $original_field = get_field_object($key, $from);
-
             if (
                 $value &&
                 $original_field &&
-                $original_field['type'] &&
                 $original_field['type'] === 'image_aspect_ratio_crop'
             ) {
-                $translated_value = pll_get_post($value, $lang);
-                if ($translated_value) {
-                    return $translated_value;
+                if (is_array($value) && !empty($value['attachment_id'])) {
+                    $translated_id = pll_get_post($value['attachment_id'], $lang);
+                    if ($translated_id) {
+                        $translated = $value;
+                        $translated['attachment_id'] = $translated_id;
+                        $translated['original_url'] = wp_get_attachment_url($translated_id);
+                        return $translated;
+                    }
                 }
             }
         }
@@ -770,30 +837,29 @@ class npx_acf_plugin_image_aspect_ratio_crop
         }
 
         $key = $meta_data['key'];
-        $to = $meta_data['post_id'];
         $from = $meta_data['master_post_id'];
 
-        // When creating translated copy of any post if there is a translated version of the
-        // cropped image, use it
-        if (get_post_type($from) !== 'attachment') {
+        if (get_post_type($from) !== 'attachment' && function_exists('get_field_object')) {
             $original_field = get_field_object($key, $from);
-
             if (
                 $value &&
                 $original_field &&
-                $original_field['type'] &&
                 $original_field['type'] === 'image_aspect_ratio_crop'
             ) {
-                $translated_value = apply_filters(
-                    'wpml_object_id',
-                    $value,
-                    'attachment',
-                    false,
-                    $lang
-                );
-
-                if ($translated_value) {
-                    return $translated_value;
+                if (is_array($value) && !empty($value['attachment_id'])) {
+                    $translated_id = apply_filters(
+                        'wpml_object_id',
+                        $value['attachment_id'],
+                        'attachment',
+                        false,
+                        $lang
+                    );
+                    if ($translated_id) {
+                        $translated = $value;
+                        $translated['attachment_id'] = $translated_id;
+                        $translated['original_url'] = wp_get_attachment_url($translated_id);
+                        return $translated;
+                    }
                 }
             }
         }
@@ -853,6 +919,104 @@ class npx_acf_plugin_image_aspect_ratio_crop
                 return true;
             },
         ]);
+        register_rest_route('aiarc/v1', '/preview', [
+            'methods' => 'GET',
+            'callback' => [$this, 'rest_api_preview_callback'],
+            'permission_callback' => function () {
+                return current_user_can('upload_files');
+            },
+            'args' => [
+                'id' => [
+                    'required' => true,
+                    'type' => 'integer',
+                ],
+                'x' => [
+                    'required' => true,
+                    'type' => 'integer',
+                ],
+                'y' => [
+                    'required' => true,
+                    'type' => 'integer',
+                ],
+                'w' => [
+                    'required' => true,
+                    'type' => 'integer',
+                ],
+                'h' => [
+                    'required' => true,
+                    'type' => 'integer',
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * REST callback: output cropped image for admin preview (no file save).
+     *
+     * @param WP_REST_Request $request
+     * @return WP_REST_Response|WP_Error
+     */
+    public function rest_api_preview_callback(WP_REST_Request $request)
+    {
+        $id = (int) $request->get_param('id');
+        $x = (int) $request->get_param('x');
+        $y = (int) $request->get_param('y');
+        $w = (int) $request->get_param('w');
+        $h = (int) $request->get_param('h');
+
+        $image_data = wp_get_attachment_metadata($id);
+        if (!$image_data || empty($image_data['file'])) {
+            return new WP_Error(
+                'invalid_attachment',
+                __('Attachment not found.', 'acf-image-aspect-ratio-crop'),
+                ['status' => 404]
+            );
+        }
+
+        $upload_dir = wp_upload_dir();
+        $file_path = $upload_dir['basedir'] . '/' . $image_data['file'];
+        if (!file_exists($file_path)) {
+            return new WP_Error(
+                'file_not_found',
+                __('Image file not found.', 'acf-image-aspect-ratio-crop'),
+                ['status' => 404]
+            );
+        }
+
+        $image = wp_get_image_editor($file_path);
+        if (is_wp_error($image)) {
+            return $image;
+        }
+
+        $crop_data = ['x' => $x, 'y' => $y, 'width' => $w, 'height' => $h];
+        $this->crop($image, $crop_data);
+
+        $max_width = 800;
+        $size = $image->get_size();
+        if ($size && $size['width'] > $max_width) {
+            $ratio = $max_width / $size['width'];
+            $image->resize($max_width, (int) round($size['height'] * $ratio), false);
+        }
+
+        $ext = pathinfo($image_data['file'], PATHINFO_EXTENSION);
+        $mime = 'image/' . (($ext === 'png') ? 'png' : (($ext === 'gif') ? 'gif' : 'jpeg'));
+
+        ob_start();
+        $stream_result = $image->stream($mime);
+        $body = ob_get_clean();
+
+        if (is_wp_error($stream_result) || empty($body)) {
+            return new WP_Error(
+                'stream_failed',
+                __('Failed to generate preview.', 'acf-image-aspect-ratio-crop'),
+                ['status' => 500]
+            );
+        }
+
+        $response = new WP_REST_Response($body, 200);
+        $response->header('Content-Type', $mime);
+        $response->header('Cache-Control', 'public, max-age=3600');
+        return $response;
     }
 
     public function rest_api_get_callback(WP_REST_Request $data)
@@ -881,10 +1045,11 @@ class npx_acf_plugin_image_aspect_ratio_crop
     {
         $this->rest_api_check_nonce($data);
         $parameters = $data->get_json_params();
-        $attachment_id = $this->create_crop($parameters);
-        return [
-            'id' => $attachment_id,
-        ];
+        $metadata = $this->build_crop_metadata($parameters);
+        if (is_wp_error($metadata)) {
+            return $metadata;
+        }
+        return $metadata;
     }
 
     public function rest_api_upload_callback(WP_REST_Request $data)
@@ -1037,6 +1202,127 @@ class npx_acf_plugin_image_aspect_ratio_crop
         wp_update_attachment_metadata($attachment_id, $attachment_data);
 
         return new WP_REST_Response(['attachment_id' => $attachment_id]);
+    }
+
+    /**
+     * Build crop metadata array for storage (no file generation).
+     *
+     * @param array $data Crop data from JS: id, x, y, width, height, cropType, aspectRatioWidth, aspectRatioHeight.
+     * @return array|WP_Error Metadata array or WP_Error on failure.
+     */
+    public function build_crop_metadata($data)
+    {
+        $attachment_id = isset($data['id']) ? absint($data['id']) : 0;
+        if (!$attachment_id) {
+            return new WP_Error(
+                'invalid_attachment',
+                __('Invalid attachment ID.', 'acf-image-aspect-ratio-crop'),
+                ['status' => 400]
+            );
+        }
+
+        $attachment = get_post($attachment_id);
+        if (!$attachment || $attachment->post_type !== 'attachment') {
+            return new WP_Error(
+                'attachment_not_found',
+                __('Attachment not found.', 'acf-image-aspect-ratio-crop'),
+                ['status' => 404]
+            );
+        }
+
+        $image_data = apply_filters(
+            'aiarc_image_data',
+            wp_get_attachment_metadata($attachment_id),
+            $attachment_id
+        );
+        if ($image_data === false || empty($image_data['file'])) {
+            return new WP_Error(
+                'invalid_image_data',
+                __('Failed to get image data.', 'acf-image-aspect-ratio-crop'),
+                ['status' => 500]
+            );
+        }
+
+        $original_url = wp_get_attachment_url($attachment_id);
+        if (!$original_url) {
+            return new WP_Error(
+                'invalid_image_url',
+                __('Failed to get image URL.', 'acf-image-aspect-ratio-crop'),
+                ['status' => 500]
+            );
+        }
+
+        $x = isset($data['x']) ? (int) $data['x'] : 0;
+        $y = isset($data['y']) ? (int) $data['y'] : 0;
+        $width = isset($data['width']) ? (int) $data['width'] : 0;
+        $height = isset($data['height']) ? (int) $data['height'] : 0;
+
+        if ($width <= 0 || $height <= 0) {
+            return new WP_Error(
+                'invalid_crop_dimensions',
+                __('Invalid crop dimensions.', 'acf-image-aspect-ratio-crop'),
+                ['status' => 400]
+            );
+        }
+
+        $crop = [
+            'x' => $x,
+            'y' => $y,
+            'width' => $width,
+            'height' => $height,
+        ];
+
+        $crop_type = isset($data['cropType']) ? $data['cropType'] : 'aspect_ratio';
+        if ($crop_type === 'free_crop') {
+            $aspect_ratio = $this->format_aspect_ratio($width, $height);
+        } else {
+            $aw = isset($data['aspectRatioWidth']) ? (int) $data['aspectRatioWidth'] : 0;
+            $ah = isset($data['aspectRatioHeight']) ? (int) $data['aspectRatioHeight'] : 0;
+            $aspect_ratio = ($aw > 0 && $ah > 0)
+                ? $this->format_aspect_ratio($aw, $ah)
+                : $this->format_aspect_ratio($width, $height);
+        }
+
+        return [
+            'attachment_id' => $attachment_id,
+            'original_url' => $original_url,
+            'crop' => $crop,
+            'aspect_ratio' => $aspect_ratio,
+        ];
+    }
+
+    /**
+     * Format width/height as aspect ratio string (e.g. "16:9").
+     *
+     * @param int $w Width.
+     * @param int $h Height.
+     * @return string
+     */
+    private function format_aspect_ratio($w, $h)
+    {
+        $w = max(1, (int) $w);
+        $h = max(1, (int) $h);
+        $gcd = $this->gcd($w, $h);
+        return ($w / $gcd) . ':' . ($h / $gcd);
+    }
+
+    /**
+     * Greatest common divisor.
+     *
+     * @param int $a
+     * @param int $b
+     * @return int
+     */
+    private function gcd($a, $b)
+    {
+        $a = abs($a);
+        $b = abs($b);
+        while ($b !== 0) {
+            $t = $b;
+            $b = $a % $b;
+            $a = $t;
+        }
+        return $a ?: 1;
     }
 
     /**

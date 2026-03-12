@@ -27,14 +27,32 @@ Manual build: `./scripts/build-release.sh [version]` — output in `dist/acf-ima
 
 ## Key Files
 
-- `acf-image-aspect-ratio-crop.php` — Main bootstrap, update checker, REST API
-- `fields/class-npx-acf-field-image-aspect-ratio-crop-v5.php` — ACF field class
+- `acf-image-aspect-ratio-crop.php` — Main bootstrap, update checker, REST API, `build_crop_metadata`, `aiarc_crop_url`, preview endpoint
+- `fields/class-npx-acf-field-image-aspect-ratio-crop-v5.php` — ACF field class (load_value, update_value, format_value, render_field)
 - `assets/src/input.js` — Field UI, Cropper.js integration
+
+## Stored Value Format
+
+The field stores an array (no cropped image file):
+
+```php
+[
+    'attachment_id' => 123,
+    'original_url' => '...',
+    'crop' => ['x' => 120, 'y' => 80, 'width' => 1600, 'height' => 900],
+    'aspect_ratio' => '16:9',
+]
+```
+
+## Timber Usage
+
+- `aiarc_crop_url($crop_data, $max_width, $max_height)` — PHP helper
+- `{{ hero_image|aiarc_crop }}` or `{{ hero_image|aiarc_crop(800) }}` — Twig filter (when Timber active)
 
 ## Conventions
 
 - **Text domain**: `acf-image-aspect-ratio-crop`
-- **REST API**: `aiarc/v1`
-- **Meta keys**: `acf_image_aspect_ratio_crop_` prefix
+- **REST API**: `aiarc/v1` (upload, crop, get, preview)
+- **Meta keys**: Field value is the array; no attachment meta for crops
 
 See `.cursorrules` for coding style and project structure.

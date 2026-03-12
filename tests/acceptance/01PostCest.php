@@ -147,19 +147,10 @@ class PostCest
                 ? 'cropped-2-scaled.jpg'
                 : 'cropped-2.jpg'
         );
-        //$I->wait(10);
         $I->amOnAdminPage('upload.php?mode=list');
-
         $extra = version_compare($wp_version, '5.3', 'ge') ? '-scaled' : '';
-
         $I->see("zoltan-kovacs-285132-unsplash$extra.jpg");
-        $I->see(
-            "zoltan-kovacs-285132-unsplash$extra-aspect-ratio-16-9$extra.jpg"
-        );
         $I->see("sylwia-pietruszka-nPCiBaK8WPk-unsplash$extra.jpg");
-        $I->see(
-            "sylwia-pietruszka-nPCiBaK8WPk-unsplash$extra-aspect-ratio-16-9$extra.jpg"
-        );
     }
 
     /*public function enableUnusedImageDeletion(AcceptanceTester $I)

@@ -352,17 +352,23 @@ import { sprintf } from 'sprintf-js';
         height: 0,
       };
 
-      // wp image
+      // wp image or plain object with id/url
       if (attachment.id) {
-        // update data
-        data = attachment.attributes;
-
-        // maybe get preview size
-        //data.url = acf.maybe_get(
-        //  data,
-        //  'sizes.' + this.o.preview_size + '.url',
-        //  data.url,
-        //);
+        if (attachment.attributes) {
+          data = attachment.attributes;
+        } else {
+          data = {
+            id: attachment.id,
+            url: attachment.url || '',
+            alt: attachment.alt || '',
+            title: attachment.title || '',
+            caption: attachment.caption || '',
+            description: attachment.description || '',
+          };
+        }
+        if (attachment._inputValue !== undefined) {
+          data._inputValue = attachment._inputValue;
+        }
       }
 
       // valid
@@ -386,29 +392,23 @@ import { sprintf } from 'sprintf-js';
      */
 
     render: function(data) {
-      // prepare
-
       data = this.prepare(data);
 
-      // update image
       this.$img.attr({
         src: data.url,
         alt: data.alt,
         title: data.title,
       });
 
-      // vars
       var val = '';
-
-      // WP attachment
-      if (data.id) {
+      if (data._inputValue !== undefined) {
+        val = data._inputValue;
+      } else if (data.id) {
         val = data.id;
       }
 
-      // update val
       acf.val(this.$input, val);
 
-      // update class
       if (val) {
         this.$el.addClass('has-value');
       } else {
@@ -548,26 +548,22 @@ import { sprintf } from 'sprintf-js';
      */
 
     edit: function() {
-      // reference
-      var self = this,
-        $field = this.$field;
-
-      // vars
-      var val = null;
-      if (
-        this.$input.parent().attr('data-original-image-id') &&
-        window.aiarc_settings.modal_type === 'original'
-      ) {
-        val = this.$input.parent().attr('data-original-image-id');
-      } else {
-        val = this.$input.val();
-      }
-
-      // bail early if no val
+      var $field = this.$field;
+      var val = this.$input.parent().attr('data-original-image-id') || this.$input.val();
       if (!val) return;
 
-      // popup
-      var frame = acf.media.popup({
+      // If value is JSON (new format), parse to get attachment_id
+      if (typeof val === 'string' && val.startsWith('{')) {
+        try {
+          var parsed = JSON.parse(val);
+          val = parsed.attachment_id || val;
+        } catch (e) {
+          val = null;
+        }
+      }
+      if (!val) return;
+
+      acf.media.popup({
         title: acf._e('image', 'edit'),
         button: acf._e('image', 'update'),
         mode: 'edit',
@@ -765,35 +761,33 @@ import { sprintf } from 'sprintf-js';
         .data('coordinates', this.cropper.getData(true))
         .attr('data-coordinates', JSON.stringify(this.cropper.getData(true)));
 
-      // Cropping successful, change image to cropped version
+      // Cropping successful - data is { attachment_id, original_url, crop, aspect_ratio }
       this.cropper.destroy();
 
       $(field)
         .find('input')
         .first()
-        .val(data.id);
+        .val(JSON.stringify(data));
 
-      let callback = response => {
-        let attachment = new window.Backbone.Model(response.data);
+      // Build preview URL for cropped result
+      const c = data.crop || {};
+      const nonce = window.aiarc.wp_rest_nonce || '';
+      const previewUrl =
+        `${window.aiarc.api_root}/aiarc/v1/preview?id=${data.attachment_id}&x=${c.x}&y=${c.y}&w=${c.width}&h=${c.height}&_wpnonce=${nonce}`;
 
-        this.render(attachment);
-        this.isFirstCrop = false;
-        this.closeModal();
+      const attachmentLike = {
+        id: data.attachment_id,
+        url: previewUrl,
+        alt: '',
+        title: '',
+        caption: '',
+        description: '',
+        _inputValue: JSON.stringify(data),
       };
 
-      if (window.aiarc_settings.rest_api_compat === '') {
-        axios
-          .get(`${window.aiarc.api_root}/aiarc/v1/get/${data.id}`)
-          .then(response => callback(response));
-      }
-
-      if (window.aiarc_settings.rest_api_compat === '1') {
-        let postData = qs.stringify({
-          action: 'acf_image_aspect_ratio_crop_get_attachment',
-          data: JSON.stringify({ attachment_id: data.id }),
-        });
-        axios.post(ajaxurl, postData).then(response => callback(response));
-      }
+      this.render(attachmentLike);
+      this.isFirstCrop = false;
+      this.closeModal();
     },
 
     closeModal: function() {

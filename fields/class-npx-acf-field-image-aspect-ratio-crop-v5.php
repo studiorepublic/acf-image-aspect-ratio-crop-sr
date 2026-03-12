@@ -390,77 +390,33 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
                 : 0,
         ];
 
-        $image_id = null;
-        $original = null;
+        $value_data = $field['value'];
+        $preview_url = '';
+        $alt = '';
+        $hidden_value = '';
+        $coordinates = null;
+        $original_image_id = null;
 
-        // has value?
-        if ($field['value']) {
-            if (is_numeric($field['value'])) {
-                $image_id = $field['value'];
-                $original = get_post_meta(
-                    $image_id,
-                    'acf_image_aspect_ratio_crop_original_image_id',
-                    true
-                );
-            } else {
-                // For migration compatibility with acf-image-crop plugin.
-                // Retrieves the image from that plugin which it has saved inside JSON encoded value.
-                // Thanks to https://github.com/carlblock
-                $backwards_compatible_json = json_decode($field['value']);
-                if (
-                    $backwards_compatible_json !== null &&
-                    isset($backwards_compatible_json->original_image) &&
-                    isset($backwards_compatible_json->cropped_image)
-                ) {
-                    $image_id = $backwards_compatible_json->cropped_image;
-                    $original = $backwards_compatible_json->original_image;
-                }
-                $preserved_original = get_post_meta(
-                    $image_id,
-                    'acf_image_aspect_ratio_crop_original_image_id',
-                    true
-                );
-                if (!$preserved_original) {
-                    // Because JSON is changed to id on save, we need to preserve the original image id in new format
-                    update_post_meta(
-                        $image_id,
-                        'acf_image_aspect_ratio_crop_original_image_id',
-                        $original
-                    );
-                }
+        if (!empty($value_data)) {
+            if (is_array($value_data) && !empty($value_data['attachment_id']) && !empty($value_data['crop'])) {
+                $preview_url = function_exists('aiarc_get_preview_url')
+                    ? aiarc_get_preview_url($value_data)
+                    : ($value_data['original_url'] ?? '');
+                $alt = get_post_meta($value_data['attachment_id'], '_wp_attachment_image_alt', true);
+                $hidden_value = wp_json_encode($value_data);
+                $coordinates = $value_data['crop'];
+                $original_image_id = $value_data['attachment_id'];
             }
+        }
 
-            // update vars
-            $url = wp_get_attachment_image_src(
-                $image_id,
-                $field['preview_size']
-            );
-            $alt = get_post_meta($image_id, '_wp_attachment_image_alt', true);
-
-            $coordinates = get_post_meta(
-                $image_id,
-                'acf_image_aspect_ratio_crop_coordinates',
-                true
-            );
-
-            $div['data-coordinates'] = $coordinates;
-
-            // url exists
-            if ($url) {
-                $url = $url[0] . '?v=' . md5(get_the_date($image_id));
-            }
-
-            if ($original) {
-                $div['data-original-image-id'] = $original;
-            } else {
-                // Normal image field compat
-                $div['data-original-image-id'] = $image_id;
-            }
-
-            // url exists
-            if ($url) {
-                $div['class'] .= ' has-value';
-            }
+        if ($coordinates !== null) {
+            $div['data-coordinates'] = wp_json_encode($coordinates);
+        }
+        if ($original_image_id) {
+            $div['data-original-image-id'] = $original_image_id;
+        }
+        if ($preview_url) {
+            $div['class'] .= ' has-value';
         }
 
         // get size of preview value
@@ -469,15 +425,13 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
         <div <?php acf_esc_attr_e($div); ?>>
             <?php acf_hidden_input([
                 'name' => $field['name'],
-                'value' => $image_id,
+                'value' => $hidden_value,
             ]); ?>
             <div class="show-if-value image-wrap"
                  <?php if ($size['width']): ?>style="<?php echo esc_attr(
     'max-width: ' . $size['width'] . 'px'
 ); ?>"<?php endif; ?>>
-                <img data-name="image" src="<?php echo esc_url(
-                    $url
-                ); ?>" alt="<?php echo esc_attr($alt); ?>"/>
+                <img data-name="image" src="<?php echo esc_url($preview_url); ?>" alt="<?php echo esc_attr($alt); ?>"/>
                 <div class="acf-actions -hover">
                     <a class="acf-icon -crop dark" data-name="crop" href="#"
                        title="<?php _e('Crop', 'acf'); ?>"></a>
@@ -505,10 +459,8 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
                     'name'
                 ]; ?>" accept="<?php echo implode(',', $mime_array); ?>">
 
-                    <?php if ($image_id && !is_numeric($image_id)): ?>
-                        <div class="acf-error-message"><p><?php echo acf_esc_html(
-                            $image_id
-                        ); ?></p></div>
+                    <?php if ($value_data && !is_array($value_data) && !is_numeric($value_data)): ?>
+                        <div class="acf-error-message"><p><?php echo acf_esc_html($value_data); ?></p></div>
                     <?php endif; ?>
 
                     <!-- basic uploader end -->
@@ -771,14 +723,112 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
      *  @param    $field (array) the field array holding all the field options
      *  @return    $value
      */
-
-    /*
-
-    function load_value( $value, $post_id, $field ) {
-        return $value;
+    function load_value($value, $post_id, $field)
+    {
+        return $this->migrate_legacy_value($value, $post_id, $field);
     }
 
-    */
+    /**
+     * Migrate legacy stored values to new array format.
+     *
+     * @param mixed $value Value from DB.
+     * @param mixed $post_id Post ID.
+     * @param array $field Field config.
+     * @return array|string Migrated array or empty string.
+     */
+    private function migrate_legacy_value($value, $post_id, $field)
+    {
+        if (empty($value)) {
+            return '';
+        }
+
+        // Already new format (array with crop)
+        if (is_array($value) && !empty($value['attachment_id']) && !empty($value['crop'])) {
+            return $value;
+        }
+
+        $cropped_id = null;
+        $original_id = null;
+
+        // Legacy: numeric ID (cropped attachment)
+        if (is_numeric($value)) {
+            $cropped_id = (int) $value;
+            $original_id = (int) get_post_meta($cropped_id, 'acf_image_aspect_ratio_crop_original_image_id', true);
+            if (!$original_id) {
+                $original_id = $cropped_id;
+            }
+        }
+        // Legacy: JSON from acf-image-crop plugin
+        elseif (is_string($value)) {
+            $decoded = json_decode($value);
+            if ($decoded && isset($decoded->cropped_image, $decoded->original_image)) {
+                $cropped_id = (int) $decoded->cropped_image;
+                $original_id = (int) $decoded->original_image;
+            }
+        }
+
+        if (!$original_id) {
+            return '';
+        }
+
+        $coordinates = null;
+        if ($cropped_id) {
+            $coords = get_post_meta($cropped_id, 'acf_image_aspect_ratio_crop_coordinates', true);
+            if (is_array($coords)) {
+                $coordinates = $coords;
+            }
+        }
+
+        if (!$coordinates || empty($coordinates['width']) || empty($coordinates['height'])) {
+            $image_data = wp_get_attachment_metadata($original_id);
+            if (!$image_data || empty($image_data['width'])) {
+                return '';
+            }
+            $coordinates = [
+                'x' => 0,
+                'y' => 0,
+                'width' => $image_data['width'],
+                'height' => $image_data['height'],
+            ];
+        }
+
+        $original_url = wp_get_attachment_url($original_id);
+        if (!$original_url) {
+            return '';
+        }
+
+        $w = (int) $coordinates['width'];
+        $h = (int) $coordinates['height'];
+        $gcd = $this->gcd(max(1, $w), max(1, $h));
+        $aspect_ratio = ($w / $gcd) . ':' . ($h / $gcd);
+
+        $migrated = [
+            'attachment_id' => $original_id,
+            'original_url' => $original_url,
+            'crop' => [
+                'x' => (int) ($coordinates['x'] ?? 0),
+                'y' => (int) ($coordinates['y'] ?? 0),
+                'width' => $w,
+                'height' => $h,
+            ],
+            'aspect_ratio' => $aspect_ratio,
+        ];
+
+        acf_update_value($migrated, $post_id, $field);
+        return $migrated;
+    }
+
+    private function gcd($a, $b)
+    {
+        $a = abs($a);
+        $b = abs($b);
+        while ($b !== 0) {
+            $t = $b;
+            $b = $a % $b;
+            $a = $t;
+        }
+        return $a ?: 1;
+    }
 
     /*
      *  update_value()
@@ -805,11 +855,25 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
 
     function update_value($value, $post_id, $field)
     {
-        return acf_get_field_type('file')->update_value(
-            $value,
-            $post_id,
-            $field
-        );
+        if ($value === '' || $value === null) {
+            return '';
+        }
+
+        if (is_string($value)) {
+            $value = wp_unslash($value);
+            $decoded = json_decode($value, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $value = $decoded;
+            } else {
+                return '';
+            }
+        }
+
+        if (!is_array($value) || empty($value['attachment_id']) || empty($value['crop'])) {
+            return '';
+        }
+
+        return $value;
     }
 
     /*
@@ -873,56 +937,15 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
 
     function format_value($value, $post_id, $field)
     {
-        // bail early if no value
         if (empty($value)) {
             return false;
         }
 
-        $image_id = null;
-
-        // For migration compatibility with acf-image-crop plugin.
-        // Retrieves the image from that plugin which it has saved inside JSON encoded value.
-        if (is_numeric($value)) {
-            $image_id = $value;
-        } elseif (
-            json_decode($value) !== false &&
-            !empty(json_decode($value)->cropped_image)
-        ) {
-            $image_id = json_decode($value)->cropped_image;
+        if (is_array($value) && !empty($value['attachment_id']) && !empty($value['crop'])) {
+            return $value;
         }
 
-        // bail early if not numeric (error message)
-        if (!is_numeric($image_id)) {
-            return false;
-        }
-
-        // convert to int
-        $image_id = intval($image_id);
-
-        // format
-        if ($field['return_format'] == 'url') {
-            return wp_get_attachment_url($image_id);
-        } elseif ($field['return_format'] == 'array') {
-            $output = acf_get_attachment($image_id);
-            if ($output) {
-                $output['original_image'] = null;
-                // TODO: use singular
-                $original = get_post_meta(
-                    $image_id,
-                    'acf_image_aspect_ratio_crop_original_image_id'
-                );
-                if (count($original)) {
-                    $output['original_image'] = acf_get_attachment(
-                        $original[0]
-                    );
-                }
-            }
-
-            return $output;
-        }
-
-        // return
-        return $image_id;
+        return false;
     }
 
     /*

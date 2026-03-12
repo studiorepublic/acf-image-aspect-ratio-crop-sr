@@ -13,9 +13,7 @@
 
 A field for Advanced Custom Fields that forces the user to crop their image to specific aspect ratio or pixel size after uploading. Using an aspect ratio is especially useful in responsive image use cases.
 
-After cropping, a new cropped image variant is created in the gallery and saved into the post. Thumbnails are also generated for the new image. User can re-crop the original image at any time from the post page.
-
-The cropped image variants are hidden by default in the media browser and on the media page but you can view them by selecting the "list view" on the media page.
+**This version stores crop metadata only** — no cropped image files are created. The field value is an array with `attachment_id`, `original_url`, `crop` (x, y, width, height), and `aspect_ratio`. Use [Timber](https://timber.github.io/) (or the included `aiarc_crop_url()` helper) to generate cropped images on the front-end.
 
 ## Modes of operation
 
@@ -40,6 +38,27 @@ When crop button is pressed, the area is cropped from the original image. After 
 ### Free crop
 
 Crop can be done freely, there are no aspect ratio limitations.
+
+## Timber Usage
+
+The field returns crop metadata. Use the `|aiarc_crop` Twig filter (when Timber is active) or `aiarc_crop_url()` in PHP:
+
+```twig
+{% set hero = post.hero_image %}
+{% if hero %}
+  <img src="{{ hero|aiarc_crop }}" alt="{{ post.title }}" />
+  {# Responsive: max 800px wide #}
+  <img src="{{ hero|aiarc_crop(800) }}" alt="{{ post.title }}" />
+{% endif %}
+```
+
+```php
+$hero = get_field('hero_image');
+if ($hero && !empty($hero['crop'])) {
+    $url = aiarc_crop_url($hero);
+    $responsive_url = aiarc_crop_url($hero, 800);
+}
+```
 
 ## Screenshots
 

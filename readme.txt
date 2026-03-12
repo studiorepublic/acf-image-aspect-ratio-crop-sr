@@ -15,9 +15,7 @@ ACF field that allows user to crop image to a specific aspect ratio or pixel siz
 
 A field for Advanced Custom Fields that forces the user to crop their image to specific aspect ratio or pixel size after uploading. Using an aspect ratio is especially useful in responsive image use cases.
 
-After cropping, a new cropped image variant is created in the gallery and saved into the post. Thumbnails are also generated for the new image. User can re-crop the original image at any time from the post page.
-
-The cropped image variants are hidden by default in the media browser and on the media page but you can view them by selecting the "list view" on the media page.
+This version stores crop metadata only - no cropped image files are created. The field value is an array with attachment_id, original_url, crop coordinates, and aspect_ratio. Use Timber (or the included aiarc_crop_url() helper) to generate cropped images on the front-end.
 
 There are three modes of operation: aspect ratio, pixel size and free crop. You can select this option when creating the field in ACF field options.
 

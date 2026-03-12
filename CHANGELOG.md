@@ -4,6 +4,27 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Meta not saved** — JSON crop metadata from the form was received with WordPress slashes (`\"`), causing `json_decode` to fail. Apply `wp_unslash()` before decoding so meta persists correctly on save.
+- **Memory error on save** — Removed redundant `acf_update_value()` calls from `update_value` filter. The filter should only return the value; ACF persists it. Calling `acf_update_value` from within the filter caused recursion/double-processing leading to memory exhaustion.
+
+### Changed (Breaking)
+
+- **Metadata-only storage** — The plugin no longer creates or saves cropped image files. Instead, it stores crop metadata (attachment_id, original_url, crop coordinates, aspect_ratio) in the ACF field. Crops are generated on-the-fly by Timber or via the `aiarc_crop_url()` helper.
+- **Legacy migration** — Existing fields with cropped attachment IDs are automatically migrated to the new array format on load.
+
+### Added
+
+- **`aiarc_crop_url()`** — PHP helper to generate cropped image URLs from metadata. Use with Timber or any PHP template.
+- **`|aiarc_crop` Twig filter** — When Timber is active, use `{{ hero_image|aiarc_crop }}` or `{{ hero_image|aiarc_crop(800) }}` for responsive crops.
+- **Preview endpoint** — `GET /aiarc/v1/preview` for admin crop preview (no file save).
+
+### Removed
+
+- **Cropped attachments** — No more cropped image files in the media library.
+- **acf/save_post cleanup** — Logic for temp attachments and unused cropped image deletion.
+
 ## [0.1.0] - 2026-03-12
 
 ### Added
