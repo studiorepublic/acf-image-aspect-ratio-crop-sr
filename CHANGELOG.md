@@ -4,6 +4,8 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-03-12
+
 ### Added
 
 - **GitHub release updates** — Plugin can now receive updates from a GitHub repository via [yahnis-elsts/plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker). Default repo: `https://github.com/studiorepublic/acf-image-aspect-ratio-crop`. Use `aiarc_update_repo_url` filter to override.
