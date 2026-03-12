@@ -4,6 +4,8 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-12
+
 ### Fixed
 
 - **Meta not saved** — JSON crop metadata from the form was received with WordPress slashes (`\"`), causing `json_decode` to fail. Apply `wp_unslash()` before decoding so meta persists correctly on save.
