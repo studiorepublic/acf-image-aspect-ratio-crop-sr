@@ -16,6 +16,10 @@ add_filter('aiarc_update_repo_url', function ($url) {
 
 Release zips are built via `scripts/build-release.sh` and attached to GitHub releases. Plugin Update Checker uses `enableReleaseAssets('/\.zip$/')` to serve the zip (not the source archive).
 
+## Branch Protection
+
+The `main` branch is protected. All updates must go through pull requests. Create a feature branch, push changes, open a PR, and merge after review. Do not push directly to `main`.
+
 ## Release Workflow
 
 1. Add changes under `## [Unreleased]` in `CHANGELOG.md`
