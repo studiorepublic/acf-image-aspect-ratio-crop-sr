@@ -93,6 +93,7 @@ When installed from a GitHub release (e.g. from [studiorepublic/acf-image-aspect
 - Polylang Pro
 - Enable Media Replace
 - WP Offload Media, Media Cloud and other plugins that move media files to remote location
+- **Cloudflare Images** — When your site is behind Cloudflare proxy, enable "Use Cloudflare Image Transformations" in Settings → ACF Image Aspect Ratio Crop. Cropped images will be served via [Cloudflare Image Transformations](https://developers.cloudflare.com/images/transform-images/transform-via-url/) instead of local files. Requires Image Resizing to be enabled in your Cloudflare dashboard.
 
 ## Frequently Asked Questions
 

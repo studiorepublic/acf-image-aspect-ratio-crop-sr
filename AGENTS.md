@@ -27,7 +27,7 @@ Manual build: `./scripts/build-release.sh [version]` — output in `dist/acf-ima
 
 ## Key Files
 
-- `acf-image-aspect-ratio-crop.php` — Main bootstrap, update checker, REST API, `build_crop_metadata`, `aiarc_crop_url`, preview endpoint
+- `acf-image-aspect-ratio-crop.php` — Main bootstrap, update checker, REST API, `build_crop_metadata`, `aiarc_crop_url`, `aiarc_cloudflare_crop_url`, `aiarc_is_cloudflare_proxy`, preview endpoint
 - `fields/class-npx-acf-field-image-aspect-ratio-crop-v5.php` — ACF field class (load_value, update_value, format_value, render_field)
 - `assets/src/input.js` — Field UI, Cropper.js integration
 
@@ -43,6 +43,10 @@ The field stores an array (no cropped image file):
     'aspect_ratio' => '16:9',
 ]
 ```
+
+## Cloudflare Images
+
+When "Use Cloudflare Image Transformations" is enabled in settings, `aiarc_crop_url` and `aiarc_get_preview_url` return Cloudflare `/cdn-cgi/image/` URLs. Requires site behind Cloudflare proxy (detected via `CF-Ray`/`CF-Connecting-IP` headers). `aiarc_cloudflare_crop_url()` builds the transform URL; `aiarc_is_cloudflare_proxy()` checks request headers.
 
 ## Timber Usage
 

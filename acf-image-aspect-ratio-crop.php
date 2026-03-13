@@ -1,7 +1,7 @@
 <?php
 
 /*
-Plugin Name: Advanced Custom Fields: Image Aspect Ratio Crop
+Plugin Name: Advanced Custom Fields: Image Aspect Ratio Crop (sr)
 Plugin URI: https://github.com/studiorepublic/acf-image-aspect-ratio-crop
 Description: ACF field that allows user to crop image to a specific aspect ratio or pixel size
 Version: 0.2.0
@@ -9,7 +9,7 @@ Author: Studio Republic - Based on the work of Johannes Siipola
 Author URI: https://www.studiorepublic.com
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
-Text Domain: acf-image-aspect-ratio-crop
+Text Domain: acf-image-aspect-ratio-crop-sr
 */
 
 // Load c3 in CI environment for code coverage
@@ -23,6 +23,75 @@ if (!defined('ABSPATH')) {
 }
 
 define('AIARC_PLUGIN_FILE', __FILE__);
+
+/**
+ * Check if the current request is proxied through Cloudflare.
+ *
+ * @return bool True if CF-Ray or CF-Connecting-IP header is present.
+ */
+function aiarc_is_cloudflare_proxy()
+{
+    return !empty($_SERVER['HTTP_CF_RAY']) || !empty($_SERVER['HTTP_CF_CONNECTING_IP']);
+}
+
+/**
+ * Generate Cloudflare Image Transform URL for cropped image.
+ *
+ * @param array $crop_data Array with original_url and crop (x, y, width, height).
+ * @param int   $max_width  Optional. Max width to scale down to.
+ * @param int   $max_height Optional. Max height to scale down to.
+ * @return string Cloudflare transform URL or empty string if invalid.
+ */
+function aiarc_cloudflare_crop_url($crop_data, $max_width = 0, $max_height = 0)
+{
+    if (
+        empty($crop_data['crop']) ||
+        !isset($crop_data['crop']['x'], $crop_data['crop']['y'], $crop_data['crop']['width'], $crop_data['crop']['height'])
+    ) {
+        return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    $source = $crop_data['original_url'] ?? '';
+    if (empty($source) && !empty($crop_data['attachment_id'])) {
+        $source = wp_get_attachment_url((int) $crop_data['attachment_id']);
+    }
+    if (empty($source)) {
+        return '';
+    }
+
+    $c = $crop_data['crop'];
+    $x = (int) $c['x'];
+    $y = (int) $c['y'];
+    $w = (int) $c['width'];
+    $h = (int) $c['height'];
+    $max_width = max(0, (int) $max_width);
+    $max_height = max(0, (int) $max_height);
+
+    $options = sprintf(
+        'trim.left=%d,trim.top=%d,trim.width=%d,trim.height=%d',
+        $x,
+        $y,
+        $w,
+        $h
+    );
+    if ($max_width > 0 || $max_height > 0) {
+        $dw = $w;
+        $dh = $h;
+        if ($max_width > 0 && $w > $max_width) {
+            $ratio = $max_width / $w;
+            $dw = $max_width;
+            $dh = (int) round($h * $ratio);
+        }
+        if ($max_height > 0 && $dh > $max_height) {
+            $ratio = $max_height / $dh;
+            $dh = $max_height;
+            $dw = (int) round($dw * $ratio);
+        }
+        $options .= sprintf(',width=%d,height=%d,fit=scale-down', $dw, $dh);
+    }
+
+    return '/cdn-cgi/image/' . $options . '/' . $source;
+}
 
 /**
  * Build preview URL for crop metadata (admin preview only).
@@ -39,6 +108,16 @@ function aiarc_get_preview_url($crop_data)
     ) {
         return '';
     }
+
+    $settings = get_option('acf-image-aspect-ratio-crop-settings', []);
+    $cloudflare_images = !empty($settings['cloudflare_images']);
+    if ($cloudflare_images && aiarc_is_cloudflare_proxy()) {
+        $cf_url = aiarc_cloudflare_crop_url($crop_data, 0, 0);
+        if ($cf_url !== '') {
+            return $cf_url;
+        }
+    }
+
     $id = (int) $crop_data['attachment_id'];
     $c = $crop_data['crop'];
     $url = add_query_arg(
@@ -72,6 +151,15 @@ function aiarc_crop_url($crop_data, $max_width = 0, $max_height = 0)
         !isset($crop_data['crop']['x'], $crop_data['crop']['y'], $crop_data['crop']['width'], $crop_data['crop']['height'])
     ) {
         return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    $settings = get_option('acf-image-aspect-ratio-crop-settings', []);
+    $cloudflare_images = !empty($settings['cloudflare_images']);
+    if ($cloudflare_images && aiarc_is_cloudflare_proxy()) {
+        $cf_url = aiarc_cloudflare_crop_url($crop_data, $max_width, $max_height);
+        if ($cf_url !== '') {
+            return $cf_url;
+        }
     }
 
     $id = (int) $crop_data['attachment_id'];
@@ -316,11 +404,11 @@ class npx_acf_plugin_image_aspect_ratio_crop
             add_submenu_page(
                 'options-general.php',
                 __(
-                    'ACF Image Aspect Ratio Crop',
+                    'ACF Image Aspect Ratio Crop (sr)',
                     'acf-image-aspect-ratio-crop'
                 ),
                 __(
-                    'ACF Image Aspect Ratio Crop',
+                    'ACF Image Aspect Ratio Crop (sr)',
                     'acf-image-aspect-ratio-crop'
                 ),
                 'manage_options',
@@ -550,18 +638,41 @@ class npx_acf_plugin_image_aspect_ratio_crop
                 );
             }
 
+            $requested_cloudflare = isset($_POST['cloudflare_images'])
+                ? filter_var($_POST['cloudflare_images'], FILTER_VALIDATE_BOOLEAN)
+                : !empty($settings['cloudflare_images']);
+            if ($requested_cloudflare && !aiarc_is_cloudflare_proxy()) {
+                $settings['cloudflare_images'] = false;
+                set_transient(
+                    'aiarc_cloudflare_reverted',
+                    __(
+                        'Site is not served by Cloudflare. The setting has been reverted. Ensure your site is behind Cloudflare proxy (orange cloud) and that Image Resizing is enabled in the Cloudflare dashboard.',
+                        'acf-image-aspect-ratio-crop'
+                    ),
+                    45
+                );
+            } else {
+                $settings['cloudflare_images'] = $requested_cloudflare;
+            }
+
             update_option('acf-image-aspect-ratio-crop-settings', $settings);
             $updated = true;
         }
         $modal_type = $settings['modal_type'];
         $delete_unused = $settings['delete_unused'];
         $rest_api_compat = $settings['rest_api_compat'];
+        $cloudflare_images = $settings['cloudflare_images'];
 
         echo '<div class="wrap">';
         echo '<h1>' .
             __('ACF Image Aspect Ratio Crop', 'acf-image-aspect-ratio-crop') .
             '</h1>';
         echo '<div class="js-finnish-base-forms-admin-notices"></div>';
+        $cloudflare_reverted = get_transient('aiarc_cloudflare_reverted');
+        if ($cloudflare_reverted) {
+            delete_transient('aiarc_cloudflare_reverted');
+            echo '<div class="notice notice-error"><p>' . esc_html($cloudflare_reverted) . '</p></div>';
+        }
         if ($updated) {
             echo '<div class="notice notice-success">';
             echo '<p>' .
@@ -650,6 +761,33 @@ class npx_acf_plugin_image_aspect_ratio_crop
         );
         echo '</td>';
         echo '</tr>';
+        echo '<tr>';
+        echo '<th scope="row">';
+        echo '<label for="cloudflare_images">' .
+            __('Use Cloudflare Image Transformations', 'acf-image-aspect-ratio-crop') .
+            '</label>';
+        echo '</th>';
+        echo '<td>';
+        echo '<p><input type="radio" id="cloudflare_images_true" name="cloudflare_images" value="true" ' .
+            checked($cloudflare_images, true, false) .
+            '><label for="cloudflare_images_true"> ' .
+            __('Enabled', 'acf-image-aspect-ratio-crop') .
+            '</label></p>';
+        echo '<p><input type="radio" id="cloudflare_images_false" name="cloudflare_images" value="false" ' .
+            checked($cloudflare_images, false, false) .
+            '><label for="cloudflare_images_false"> ' .
+            __('Disabled', 'acf-image-aspect-ratio-crop') .
+            '</label></p>';
+        echo '</td>';
+        echo '</tr>';
+        echo '<tr>';
+        echo '<td colspan="2" style="padding: 0">';
+        echo __(
+            'When enabled, cropped images are served via Cloudflare\'s image transform URL. Requires your site to be behind Cloudflare proxy (orange cloud) and Image Resizing enabled in the Cloudflare dashboard.',
+            'acf-image-aspect-ratio-crop'
+        );
+        echo '</td>';
+        echo '</tr>';
         echo '</tbody>';
         echo '</table>';
         echo '<p class="submit">';
@@ -694,6 +832,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
             'modal_type' => 'cropped',
             'delete_unused' => false,
             'rest_api_compat' => false,
+            'cloudflare_images' => false,
         ];
 
         $this->user_settings = array_merge($default_user_settings, $settings);
