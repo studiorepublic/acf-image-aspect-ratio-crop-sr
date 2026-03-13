@@ -4,6 +4,8 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-13
+
 ### Added
 
 - **Cloudflare Image Transformations** — Optional setting to serve cropped images via Cloudflare's `/cdn-cgi/image/` transform URL. Requires site to be behind Cloudflare proxy (orange cloud) and Image Resizing enabled. If enabling fails (no CF headers), the setting reverts with an error message.
