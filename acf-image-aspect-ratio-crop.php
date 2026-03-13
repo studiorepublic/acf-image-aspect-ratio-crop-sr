@@ -2,7 +2,7 @@
 
 /*
 Plugin Name: Advanced Custom Fields: Image Aspect Ratio Crop (sr)
-Plugin URI: https://github.com/studiorepublic/acf-image-aspect-ratio-crop
+Plugin URI: https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr
 Description: ACF field that allows user to crop image to a specific aspect ratio or pixel size
 Version: 0.2.0
 Author: Studio Republic - Based on the work of Johannes Siipola
@@ -238,11 +238,11 @@ $aiarc_autoload = __DIR__ . '/vendor/autoload.php';
 if (file_exists($aiarc_autoload)) {
     require_once $aiarc_autoload;
     if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
-        $repo_url = apply_filters('aiarc_update_repo_url', 'https://github.com/studiorepublic/acf-image-aspect-ratio-crop');
+        $repo_url = apply_filters('aiarc_update_repo_url', 'https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr');
         $checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
             $repo_url,
             AIARC_PLUGIN_FILE,
-            'acf-image-aspect-ratio-crop'
+            'acf-image-aspect-ratio-crop-sr'
         );
         $checker->getVcsApi()->enableReleaseAssets('/\.zip$/');
     }
@@ -405,14 +405,14 @@ class npx_acf_plugin_image_aspect_ratio_crop
                 'options-general.php',
                 __(
                     'ACF Image Aspect Ratio Crop (sr)',
-                    'acf-image-aspect-ratio-crop'
+                    'acf-image-aspect-ratio-crop-sr'
                 ),
                 __(
                     'ACF Image Aspect Ratio Crop (sr)',
-                    'acf-image-aspect-ratio-crop'
+                    'acf-image-aspect-ratio-crop-sr'
                 ),
                 'manage_options',
-                'acf-image-aspect-ratio-crop',
+                'acf-image-aspect-ratio-crop-sr',
                 [$this, 'settings_page']
             );
         });
@@ -422,34 +422,14 @@ class npx_acf_plugin_image_aspect_ratio_crop
             'plugin_action_links_' . plugin_basename(__FILE__),
             function ($links) {
                 $settings_link =
-                    '<a href="options-general.php?page=acf-image-aspect-ratio-crop">' .
-                    __('Settings', 'acf-image-aspect-ratio-crop') .
+                    '<a href="options-general.php?page=acf-image-aspect-ratio-crop-sr">' .
+                    __('Settings', 'acf-image-aspect-ratio-crop-sr') .
                     '</a>';
                 array_unshift($links, $settings_link);
                 return $links;
             }
         );
 
-        // Donate link
-        add_filter(
-            'plugin_row_meta',
-            function ($links, $file) {
-                if ($file === plugin_basename(__FILE__)) {
-                    array_push(
-                        $links,
-                        '<a href="https://github.com/sponsors/joppuyo">' .
-                            esc_html__(
-                                'Support development on GitHub Sponsors',
-                                'acf-image-aspect-ratio-crop'
-                            ) .
-                            '</a>'
-                    );
-                }
-                return $links;
-            },
-            10,
-            2
-        );
 
         if (!wp_next_scheduled('aiarc_delete_unused_attachments')) {
             wp_schedule_event(
@@ -618,7 +598,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
         $updated = false;
         $settings = $this->user_settings;
         if (!empty($_POST)) {
-            check_admin_referer('acf-image-aspect-ratio-crop');
+            check_admin_referer('acf-image-aspect-ratio-crop-sr');
 
             if (!empty($_POST['modal_type'])) {
                 $settings['modal_type'] = $_POST['modal_type'];
@@ -647,7 +627,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
                     'aiarc_cloudflare_reverted',
                     __(
                         'Site is not served by Cloudflare. The setting has been reverted. Ensure your site is behind Cloudflare proxy (orange cloud) and that Image Resizing is enabled in the Cloudflare dashboard.',
-                        'acf-image-aspect-ratio-crop'
+                        'acf-image-aspect-ratio-crop-sr'
                     ),
                     45
                 );
@@ -665,7 +645,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
 
         echo '<div class="wrap">';
         echo '<h1>' .
-            __('ACF Image Aspect Ratio Crop', 'acf-image-aspect-ratio-crop') .
+            __('ACF Image Aspect Ratio Crop', 'acf-image-aspect-ratio-crop-sr') .
             '</h1>';
         echo '<div class="js-finnish-base-forms-admin-notices"></div>';
         $cloudflare_reverted = get_transient('aiarc_cloudflare_reverted');
@@ -676,7 +656,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
         if ($updated) {
             echo '<div class="notice notice-success">';
             echo '<p>' .
-                __('Options have been updated', 'acf-image-aspect-ratio-crop') .
+                __('Options have been updated', 'acf-image-aspect-ratio-crop-sr') .
                 '</p>';
             echo '</div>';
         }
@@ -688,7 +668,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
         echo '<label for="modal_type">' .
             __(
                 'Image displayed in attachment edit modal dialog',
-                'acf-image-aspect-ratio-crop'
+                'acf-image-aspect-ratio-crop-sr'
             ) .
             '</label>';
         echo '</th>';
@@ -696,33 +676,33 @@ class npx_acf_plugin_image_aspect_ratio_crop
         echo '<p><input type="radio" id="cropped" name="modal_type" value="cropped" ' .
             checked($modal_type, 'cropped', false) .
             '><label for="cropped"> ' .
-            __('Cropped image', 'acf-image-aspect-ratio-crop') .
+            __('Cropped image', 'acf-image-aspect-ratio-crop-sr') .
             '</label></p>';
         echo '<p><input type="radio" id="original" name="modal_type" value="original" ' .
             checked($modal_type, 'original', false) .
             '><label for="original"> ' .
-            __('Original image', 'acf-image-aspect-ratio-crop') .
+            __('Original image', 'acf-image-aspect-ratio-crop-sr') .
             '</label></p>';
         echo '</td>';
         echo '</tr>';
         echo '<tr>';
         echo '<th scope="row">';
         echo '<label for="modal_type">' .
-            __('Delete unused cropped images', 'acf-image-aspect-ratio-crop') .
+            __('Delete unused cropped images', 'acf-image-aspect-ratio-crop-sr') .
             ' ' .
-            __('(Beta feature)', 'acf-image-aspect-ratio-crop') .
+            __('(Beta feature)', 'acf-image-aspect-ratio-crop-sr') .
             '</label>';
         echo '</th>';
         echo '<td>';
         echo '<p><input type="radio" id="delete_unused_true" name="delete_unused" value="true" ' .
             checked($delete_unused, true, false) .
             '><label for="delete_unused_true"> ' .
-            __('Enabled', 'acf-image-aspect-ratio-crop') .
+            __('Enabled', 'acf-image-aspect-ratio-crop-sr') .
             '</label></p>';
         echo '<p><input type="radio" id="delete_unused_false" name="delete_unused" value="false" ' .
             checked($delete_unused, false, false) .
             '><label for="delete_unused_false"> ' .
-            __('Disabled', 'acf-image-aspect-ratio-crop') .
+            __('Disabled', 'acf-image-aspect-ratio-crop-sr') .
             '</label></p>';
         echo '</td>';
         echo '</tr>';
@@ -730,26 +710,26 @@ class npx_acf_plugin_image_aspect_ratio_crop
         echo '<td colspan="2" style="padding: 0">';
         echo __(
             'Please note that "Delete unused cropped images" feature is a beta feature because it requires more testing. Please do not enable the option without first backing up your database and uploads in order to prevent potential data loss.',
-            'acf-image-aspect-ratio-crop'
+            'acf-image-aspect-ratio-crop-sr'
         );
         echo '</td>';
         echo '</tr>';
         echo '<tr>';
         echo '<th scope="row">';
         echo '<label for="modal_type">' .
-            __('REST API compatibility mode', 'acf-image-aspect-ratio-crop') .
+            __('REST API compatibility mode', 'acf-image-aspect-ratio-crop-sr') .
             '</label>';
         echo '</th>';
         echo '<td>';
         echo '<p><input type="radio" id="rest_api_compat_true" name="rest_api_compat" value="true" ' .
             checked($rest_api_compat, true, false) .
             '><label for="rest_api_compat_true"> ' .
-            __('Enabled', 'acf-image-aspect-ratio-crop') .
+            __('Enabled', 'acf-image-aspect-ratio-crop-sr') .
             '</label></p>';
         echo '<p><input type="radio" id="rest_api_compat_false" name="rest_api_compat" value="false" ' .
             checked($rest_api_compat, false, false) .
             '><label for="rest_api_compat_false"> ' .
-            __('Disabled', 'acf-image-aspect-ratio-crop') .
+            __('Disabled', 'acf-image-aspect-ratio-crop-sr') .
             '</label></p>';
         echo '</td>';
         echo '</tr>';
@@ -757,26 +737,26 @@ class npx_acf_plugin_image_aspect_ratio_crop
         echo '<td colspan="2" style="padding: 0">';
         echo __(
             'When you enable the REST API compatibility mode, cropping in the WordPress administration interface will use admin-ajax.php instead of the REST API. Use this compatibility mode if you do not have REST API enabled. Please note that this is a temporary fix since the REST API is the way forward. The compatibility mode will be removed in a future major release of the plugin.',
-            'acf-image-aspect-ratio-crop'
+            'acf-image-aspect-ratio-crop-sr'
         );
         echo '</td>';
         echo '</tr>';
         echo '<tr>';
         echo '<th scope="row">';
         echo '<label for="cloudflare_images">' .
-            __('Use Cloudflare Image Transformations', 'acf-image-aspect-ratio-crop') .
+            __('Use Cloudflare Image Transformations', 'acf-image-aspect-ratio-crop-sr') .
             '</label>';
         echo '</th>';
         echo '<td>';
         echo '<p><input type="radio" id="cloudflare_images_true" name="cloudflare_images" value="true" ' .
             checked($cloudflare_images, true, false) .
             '><label for="cloudflare_images_true"> ' .
-            __('Enabled', 'acf-image-aspect-ratio-crop') .
+            __('Enabled', 'acf-image-aspect-ratio-crop-sr') .
             '</label></p>';
         echo '<p><input type="radio" id="cloudflare_images_false" name="cloudflare_images" value="false" ' .
             checked($cloudflare_images, false, false) .
             '><label for="cloudflare_images_false"> ' .
-            __('Disabled', 'acf-image-aspect-ratio-crop') .
+            __('Disabled', 'acf-image-aspect-ratio-crop-sr') .
             '</label></p>';
         echo '</td>';
         echo '</tr>';
@@ -784,7 +764,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
         echo '<td colspan="2" style="padding: 0">';
         echo __(
             'When enabled, cropped images are served via Cloudflare\'s image transform URL. Requires your site to be behind Cloudflare proxy (orange cloud) and Image Resizing enabled in the Cloudflare dashboard.',
-            'acf-image-aspect-ratio-crop'
+            'acf-image-aspect-ratio-crop-sr'
         );
         echo '</td>';
         echo '</tr>';
@@ -793,7 +773,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
         echo '<p class="submit">';
         echo '<input class="button-primary js-finnish-base-forms-submit-button" type="submit" name="submit-button" value="Save">';
         echo '</p>';
-        wp_nonce_field('acf-image-aspect-ratio-crop');
+        wp_nonce_field('acf-image-aspect-ratio-crop-sr');
         echo '</form>';
         echo '</div>';
     }
