@@ -1,5 +1,5 @@
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
-const WatchTimePlugin = require('webpack-watch-time-plugin');
+const autoprefixer = require('autoprefixer');
 const path = require('path');
 
 module.exports = (env, argv) => ({
@@ -12,37 +12,36 @@ module.exports = (env, argv) => ({
     path: path.resolve(__dirname, 'assets/dist'),
   },
   resolve: {
-    extensions: ['*', '.js'],
+    extensions: ['.js'],
   },
   performance: {
     hints: false,
   },
   devtool: 'source-map',
-  mode: 'development',
+  mode: argv.mode || 'development',
   module: {
     rules: [
       {
         test: /\.js$/,
-        use: [
-          {
-            loader: 'babel-loader',
-            options: {
-              presets: ['@babel/preset-env'],
-            },
+        exclude: /node_modules/,
+        use: {
+          loader: 'babel-loader',
+          options: {
+            presets: ['@babel/preset-env'],
           },
-        ],
+        },
+      },
+      {
+        resourceQuery: /raw/,
+        type: 'asset/source',
       },
       {
         test: /\.(png|svg|jpg|jpeg|tiff|webp|gif|ico|woff|woff2|eot|ttf|otf|mp4|webm|wav|mp3|m4a|aac|oga)$/,
-        use: [
-          {
-            loader: 'file-loader',
-            options: {
-              context: 'src',
-              name: '[path][name].[ext]?ver=[md5:hash:8]',
-            },
-          },
-        ],
+        resourceQuery: { not: [/raw/] },
+        type: 'asset/resource',
+        generator: {
+          filename: '[path][name][ext]?ver=[contenthash:8]',
+        },
       },
       {
         test: /\.s?css$/,
@@ -57,8 +56,9 @@ module.exports = (env, argv) => ({
           {
             loader: 'postcss-loader',
             options: {
-              ident: 'postcss',
-              plugins: [require('autoprefixer')({})],
+              postcssOptions: {
+                plugins: [autoprefixer()],
+              },
               sourceMap: true,
             },
           },
@@ -66,6 +66,9 @@ module.exports = (env, argv) => ({
             loader: 'sass-loader',
             options: {
               sourceMap: true,
+              sassOptions: {
+                silenceDeprecations: ['legacy-js-api', 'import'],
+              },
             },
           },
         ],
@@ -77,6 +80,5 @@ module.exports = (env, argv) => ({
       filename: '[name].css',
       chunkFilename: '[id].css',
     }),
-    new WatchTimePlugin(),
   ],
 });

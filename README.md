@@ -60,6 +60,29 @@ if ($hero && !empty($hero['crop'])) {
 }
 ```
 
+### Focal point
+
+When cropping in the admin, drag the focal marker inside the crop box. It is stored on the field value as `crop.focal_point` with `x` and `y` as percentages (0–100) from the top-left of the crop rectangle.
+
+**CSS (any host):** use `object-fit: cover` and `object-position` with the saved percentages:
+
+```twig
+{% set hero = post.hero_image %}
+{% set fp = hero.crop.focal_point|default({ x: 50, y: 50 }) %}
+<img
+  src="{{ hero.original_url }}"
+  style="object-fit: cover; object-position: {{ fp.x }}% {{ fp.y }}%;"
+  alt="{{ post.title }}"
+/>
+```
+
+```php
+$fp = aiarc_get_focal_point($hero);
+// object-position: {$fp['x']}% {$fp['y']}%;
+```
+
+**Cloudflare:** when Image Transformations are enabled, use `aiarc_cloudflare_recrop_url($hero, $width, $height)` to trim to the stored crop and resize/crop to another aspect ratio using `gravity` from the focal point. `aiarc_get_focal_gravity($hero)` returns the gravity string (e.g. `0.5x0.5`).
+
 ## Screenshots
 
 ### Cropping an image to 16:9 aspect ratio

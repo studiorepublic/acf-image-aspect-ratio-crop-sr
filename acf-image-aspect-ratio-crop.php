@@ -35,6 +35,74 @@ function aiarc_is_cloudflare_proxy()
 }
 
 /**
+ * Normalize focal point percentages (0–100, one decimal).
+ *
+ * @param mixed $x Horizontal percent from left of crop box.
+ * @param mixed $y Vertical percent from top of crop box.
+ * @return array{x: float, y: float}
+ */
+function aiarc_normalize_focal_point($x = null, $y = null)
+{
+    $normalize = function ($value, $default) {
+        if ($value === null || $value === '') {
+            return (float) $default;
+        }
+        if (!is_numeric($value)) {
+            return (float) $default;
+        }
+        $value = (float) $value;
+        if ($value < 0) {
+            $value = 0;
+        } elseif ($value > 100) {
+            $value = 100;
+        }
+        return round($value, 1);
+    };
+
+    return [
+        'x' => $normalize($x, 50),
+        'y' => $normalize($y, 50),
+    ];
+}
+
+/**
+ * Get focal point from crop metadata (defaults to center).
+ *
+ * @param array $crop_data Field value or array with crop key.
+ * @return array{x: float, y: float}
+ */
+function aiarc_get_focal_point($crop_data)
+{
+    if (
+        !empty($crop_data['crop']['focal_point']) &&
+        is_array($crop_data['crop']['focal_point'])
+    ) {
+        $fp = $crop_data['crop']['focal_point'];
+        return aiarc_normalize_focal_point(
+            $fp['x'] ?? null,
+            $fp['y'] ?? null
+        );
+    }
+
+    return aiarc_normalize_focal_point(null, null);
+}
+
+/**
+ * Cloudflare gravity string from crop focal point (e.g. "0.5x0.5").
+ *
+ * @param array $crop_data Field value or array with crop key.
+ * @return string
+ */
+function aiarc_get_focal_gravity($crop_data)
+{
+    $fp = aiarc_get_focal_point($crop_data);
+    $gx = $fp['x'] / 100;
+    $gy = $fp['y'] / 100;
+
+    return sprintf('%.3fx%.3f', $gx, $gy);
+}
+
+/**
  * Generate Cloudflare Image Transform URL for cropped image.
  *
  * @param array $crop_data Array with original_url and crop (x, y, width, height).
@@ -89,6 +157,52 @@ function aiarc_cloudflare_crop_url($crop_data, $max_width = 0, $max_height = 0)
         }
         $options .= sprintf(',width=%d,height=%d,fit=scale-down', $dw, $dh);
     }
+
+    return '/cdn-cgi/image/' . $options . '/' . $source;
+}
+
+/**
+ * Cloudflare URL: trim to stored crop, then resize/crop to target size using focal gravity.
+ *
+ * @param array  $crop_data Field value with original_url and crop rect.
+ * @param int    $width     Target width in pixels.
+ * @param int    $height    Target height in pixels.
+ * @param string $fit       Cloudflare fit mode (cover or crop).
+ * @return string Transform path or empty string if invalid.
+ */
+function aiarc_cloudflare_recrop_url($crop_data, $width, $height, $fit = 'cover')
+{
+    if (
+        empty($crop_data['crop']) ||
+        !isset($crop_data['crop']['x'], $crop_data['crop']['y'], $crop_data['crop']['width'], $crop_data['crop']['height'])
+    ) {
+        return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    $source = $crop_data['original_url'] ?? '';
+    if (empty($source) && !empty($crop_data['attachment_id'])) {
+        $source = wp_get_attachment_url((int) $crop_data['attachment_id']);
+    }
+    if (empty($source)) {
+        return '';
+    }
+
+    $width = max(1, (int) $width);
+    $height = max(1, (int) $height);
+    $fit = $fit === 'crop' ? 'crop' : 'cover';
+
+    $c = $crop_data['crop'];
+    $options = sprintf(
+        'trim.left=%d,trim.top=%d,trim.width=%d,trim.height=%d,width=%d,height=%d,fit=%s,gravity=%s',
+        (int) $c['x'],
+        (int) $c['y'],
+        (int) $c['width'],
+        (int) $c['height'],
+        $width,
+        $height,
+        $fit,
+        aiarc_get_focal_gravity($crop_data)
+    );
 
     return '/cdn-cgi/image/' . $options . '/' . $source;
 }
@@ -234,17 +348,19 @@ function aiarc_crop_url($crop_data, $max_width = 0, $max_height = 0)
 }
 
 // Plugin Update Checker (GitHub releases via yahnis-elsts/plugin-update-checker)
-$aiarc_autoload = __DIR__ . '/vendor/autoload.php';
-if (file_exists($aiarc_autoload)) {
-    require_once $aiarc_autoload;
-    if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
-        $repo_url = apply_filters('aiarc_update_repo_url', 'https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr');
-        $checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-            $repo_url,
-            AIARC_PLUGIN_FILE,
-            'acf-image-aspect-ratio-crop-sr'
-        );
-        $checker->getVcsApi()->enableReleaseAssets('/\.zip$/');
+if (!defined('AIARC_UNIT_TEST')) {
+    $aiarc_autoload = __DIR__ . '/vendor/autoload.php';
+    if (file_exists($aiarc_autoload)) {
+        require_once $aiarc_autoload;
+        if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
+            $repo_url = apply_filters('aiarc_update_repo_url', 'https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr');
+            $checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+                $repo_url,
+                AIARC_PLUGIN_FILE,
+                'acf-image-aspect-ratio-crop-sr'
+            );
+            $checker->getVcsApi()->enableReleaseAssets('/\.zip$/');
+        }
     }
 }
 
@@ -1384,11 +1500,17 @@ class npx_acf_plugin_image_aspect_ratio_crop
             );
         }
 
+        $focal = aiarc_normalize_focal_point(
+            $data['focalPointX'] ?? null,
+            $data['focalPointY'] ?? null
+        );
+
         $crop = [
             'x' => $x,
             'y' => $y,
             'width' => $width,
             'height' => $height,
+            'focal_point' => $focal,
         ];
 
         $crop_type = isset($data['cropType']) ? $data['cropType'] : 'aspect_ratio';
@@ -1800,4 +1922,6 @@ class npx_acf_plugin_image_aspect_ratio_crop
 }
 
 // initialize
-new npx_acf_plugin_image_aspect_ratio_crop();
+if (!defined('AIARC_UNIT_TEST')) {
+    new npx_acf_plugin_image_aspect_ratio_crop();
+}

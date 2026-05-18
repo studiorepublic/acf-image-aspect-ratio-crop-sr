@@ -31,8 +31,6 @@ mkdir -p "$BUILD_DIR" "$DIST_DIR"
 if [[ -f package.json ]]; then
   echo "Installing npm dependencies and building assets..."
   npm ci 2>/dev/null || npm install --no-audit --no-fund
-  # Node 17+ requires legacy OpenSSL provider for older webpack
-  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider"
   npm run build
 fi
 
