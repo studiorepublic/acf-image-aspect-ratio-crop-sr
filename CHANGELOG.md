@@ -4,6 +4,8 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-05-20
+
 ## [1.1.4] - 2026-05-20
 
 ### Added
