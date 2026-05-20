@@ -16,8 +16,8 @@ PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$PLUGIN_DIR/dist"
 BUILD_DIR="$PLUGIN_DIR/build"
 
-VERSION="${1:-$(grep "Version:" "$PLUGIN_DIR/acf-image-aspect-ratio-crop.php" | sed 's/.*: *//' | tr -d ' ')}"
-ZIP_NAME="acf-image-aspect-ratio-crop.zip"
+VERSION="${1:-$(grep "Version:" "$PLUGIN_DIR/acf-image-aspect-ratio-crop0sr.php" | sed 's/.*: *//' | tr -d ' ')}"
+ZIP_NAME="acf-image-aspect-ratio-crop-sr.zip"
 
 cd "$PLUGIN_DIR"
 
@@ -40,6 +40,7 @@ if [[ ! -d vendor ]] || [[ vendor/autoload.php -ot composer.json ]]; then
   composer install --no-dev --no-interaction
 fi
 
+echo "Copying plugin files..."
 # Copy plugin files (exclude build artifacts, dev files; see .distignore)
 rsync -a \
   --exclude='.git' \
@@ -72,6 +73,7 @@ rsync -a \
   --exclude='assets/src' \
   . "$BUILD_DIR/acf-image-aspect-ratio-crop/"
 
+echo "Creating zip..."
 # Create zip with plugin directory as root (wp-content/plugins/acf-image-aspect-ratio-crop/)
 cd "$BUILD_DIR"
 zip -r "$DIST_DIR/$ZIP_NAME" "acf-image-aspect-ratio-crop" -x "*.git*" -x "*.DS_Store"

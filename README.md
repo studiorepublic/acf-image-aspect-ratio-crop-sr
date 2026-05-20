@@ -1,19 +1,34 @@
-# ACF Image Aspect Ratio Crop Field
+# ACF Image Aspect Ratio Crop Field (Studio Republic)
 
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/joppuyo/acf-image-aspect-ratio-crop/main.yml?branch=master&logo=github)](https://github.com/joppuyo/acf-image-aspect-ratio-crop/actions/workflows/main.yml)
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/joppuyo/acf-image-aspect-ratio-crop/test.yml?branch=master&label=tests&logo=github)](https://github.com/joppuyo/acf-image-aspect-ratio-crop/actions/workflows/test.yml)
-[![WordPress plugin](https://img.shields.io/wordpress/plugin/v/acf-image-aspect-ratio-crop?logo=wordpress)](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/)
-[![WordPress Plugin Active Installs](https://img.shields.io/wordpress/plugin/installs/acf-image-aspect-ratio-crop?logo=wordpress)](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/)
-[![WordPress Plugin Rating](https://img.shields.io/wordpress/plugin/stars/acf-image-aspect-ratio-crop?logo=wordpress)](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/#reviews)
-[![WordPress Plugin Required PHP Version](https://img.shields.io/wordpress/plugin/required-php/acf-image-aspect-ratio-crop)](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/)
-[![WordPress Plugin: Required WP Version](https://img.shields.io/wordpress/plugin/wp-version/acf-image-aspect-ratio-crop?label=required&logo=wordpress)](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/)
-[![WordPress Plugin: Tested WP Version](https://img.shields.io/badge/dynamic/json?label=tested&logo=wordpress&prefix=v&color=green&query=%24.tested&url=https%3A%2F%2Fapi.wordpress.org%2Fplugins%2Finfo%2F1.0%2Facf-image-aspect-ratio-crop.json)](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/)
-[![codecov](https://codecov.io/gh/joppuyo/acf-image-aspect-ratio-crop/branch/master/graph/badge.svg?token=EQXMRSFD1L)](https://codecov.io/gh/joppuyo/acf-image-aspect-ratio-crop)
-[![Active Development](https://img.shields.io/badge/Maintenance%20Level-Actively%20Developed-brightgreen.svg)](https://gist.github.com/cheerfulstoic/d107229326a01ff0f333a1d3476e068d)
+A field for Advanced Custom Fields that forces the user to crop their image to a specific aspect ratio or pixel size after uploading. Using an aspect ratio is especially useful in responsive image use cases.
 
-A field for Advanced Custom Fields that forces the user to crop their image to specific aspect ratio or pixel size after uploading. Using an aspect ratio is especially useful in responsive image use cases.
+This **Studio Republic fork** ([`acf-image-aspect-ratio-crop-sr`](https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr)) extends the [original WordPress plugin](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/) by [Johannes Siipola](https://github.com/joppuyo/acf-image-aspect-ratio-crop). It stores **crop metadata only** (no cropped image files in the media library), generates crops on the front end, and adds an optional **focal point** inside the crop selection.
 
-**This version stores crop metadata only** — no cropped image files are created. The field value is an array with `attachment_id`, `original_url`, `crop` (x, y, width, height), and `aspect_ratio`. Use [Timber](https://timber.github.io/) (or the included `aiarc_crop_url()` helper) to generate cropped images on the front-end.
+## Stored value format
+
+The field returns an array (not a cropped attachment ID):
+
+```php
+[
+    'attachment_id' => 123,           // Original image attachment ID
+    'original_url'  => 'https://…', // URL of the original upload
+    'crop' => [
+        'x' => 120,
+        'y' => 80,
+        'width' => 1600,
+        'height' => 900,
+        'focal_point' => [
+            'x' => 50.0,              // Percent from left of crop box (0–100)
+            'y' => 50.0,              // Percent from top of crop box (0–100)
+        ],
+    ],
+    'aspect_ratio' => '16:9',
+]
+```
+
+Use [Timber](https://timber.github.io/) (`|aiarc_crop`) or `aiarc_crop_url()` to output cropped image URLs. Use `crop.focal_point` (or `aiarc_get_focal_point()`) for CSS `object-position` or Cloudflare `gravity` when recropping to other sizes.
+
+Legacy posts without `focal_point` default to **50%, 50%** (center).
 
 ## Modes of operation
 
@@ -23,25 +38,65 @@ There are three modes of operation: aspect ratio, pixel size and free crop. You 
 
 Use this option if you want the image to be of specific aspect ratio like 16:9 but the pixel size is not important.
 
-After selecting an image, user can select an area from the image that matches this aspect ratio. When crop button is pressed, the area is cropped from the original image.
-
-If you need a smaller image size, you make use of WordPress's thumbnail functionality to access a smaller version of the image.
+After selecting an image, the user selects an area that matches the aspect ratio. The crop coordinates are saved as metadata; the front end renders the crop via `aiarc_crop_url()` or Timber.
 
 ### Pixel size
 
-Use this option if you need a specific pixel size image like 640x480. User will not be able to select an image smaller than the defined pixel size.
+Use this option if you need a specific pixel size image like 640×480. The selection cannot be smaller than the defined size; aspect ratio is locked to the pixel dimensions.
 
-After selecting an image, user can select an area from the image they want, which can be larger than the pixel size but may not be smaller. The aspect ratio of the selection is locked according to the pixel size.
-
-When crop button is pressed, the area is cropped from the original image. After the crop is complete, the image will be automatically scaled down to the pixel size. This means the final image will always be the specified size.
+When the crop is confirmed, metadata reflects the selected region. Scaling to the target pixel size happens when generating URLs (or via Cloudflare transforms).
 
 ### Free crop
 
-Crop can be done freely, there are no aspect ratio limitations.
+Crop can be done freely, with no fixed aspect ratio constraint.
 
-## Timber Usage
+## Focal point
 
-The field returns crop metadata. Use the `|aiarc_crop` Twig filter (when Timber is active) or `aiarc_crop_url()` in PHP:
+While cropping in the admin, a **focal marker** appears inside the crop box (default: center). Drag it to choose which part of the crop should stay visible when the image is reframed to a different aspect ratio or placed in a `object-fit: cover` container.
+
+- Stored as `crop.focal_point.x` and `crop.focal_point.y` (percentages **relative to the crop rectangle**, 0–100).
+- The marker cannot be dragged outside the crop box.
+- **Reset crop** restores the focal point to center (50, 50).
+
+### CSS (any host)
+
+Use the original image URL with `object-fit: cover` and focal percentages as `object-position`:
+
+```twig
+{% set hero = post.hero_image %}
+{% if hero %}
+  {% set fp = hero.crop.focal_point|default({ x: 50, y: 50 }) %}
+  <img
+    src="{{ hero.original_url }}"
+    alt="{{ post.title }}"
+    style="object-fit: cover; object-position: {{ fp.x }}% {{ fp.y }}%;"
+  />
+{% endif %}
+```
+
+```php
+$hero = get_field('hero_image');
+if ($hero && !empty($hero['crop'])) {
+    $fp = aiarc_get_focal_point($hero);
+    printf(
+        'object-position: %s%% %s%%;',
+        esc_attr($fp['x']),
+        esc_attr($fp['y'])
+    );
+}
+```
+
+### Cloudflare Image Transformations
+
+When **Use Cloudflare Image Transformations** is enabled (Settings → ACF Image Aspect Ratio Crop) and the site is behind the Cloudflare proxy:
+
+- `aiarc_crop_url()` / `|aiarc_crop` — trim to the stored crop (and optional max dimensions).
+- `aiarc_cloudflare_recrop_url($hero, $width, $height)` — trim to the stored crop, then resize/crop to another size using `fit=cover` and **gravity** from the focal point.
+- `aiarc_get_focal_gravity($hero)` — returns a Cloudflare gravity string (e.g. `0.5x0.5` for center).
+
+Requires [Image Resizing](https://developers.cloudflare.com/images/transform-images/) on your Cloudflare zone.
+
+## Timber usage
 
 ```twig
 {% set hero = post.hero_image %}
@@ -60,28 +115,94 @@ if ($hero && !empty($hero['crop'])) {
 }
 ```
 
-### Focal point
+## Upgrading from the original plugin
 
-When cropping in the admin, drag the focal marker inside the crop box. It is stored on the field value as `crop.focal_point` with `x` and `y` as percentages (0–100) from the top-left of the crop rectangle.
+The [WordPress.org plugin](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/) (and older GitHub releases before the metadata-only change) **created a new cropped attachment** in the media library and typically stored its **attachment ID** in the ACF field. This fork **does not** create cropped files; it stores the array structure above and builds image URLs at runtime.
 
-**CSS (any host):** use `object-fit: cover` and `object-position` with the saved percentages:
+**Migration is one-way.** After content is saved in the new format, switching back to the original plugin will not restore correct behaviour.
 
-```twig
-{% set hero = post.hero_image %}
-{% set fp = hero.crop.focal_point|default({ x: 50, y: 50 }) %}
-<img
-  src="{{ hero.original_url }}"
-  style="object-fit: cover; object-position: {{ fp.x }}% {{ fp.y }}%;"
-  alt="{{ post.title }}"
-/>
-```
+### Before you switch
+
+1. **Back up the database** (and uploads if you rely on cropped files elsewhere).
+2. **Audit templates** that treat the field as an image ID or URL from a cropped attachment.
+3. Plan how crops will be rendered: `aiarc_crop_url()`, Timber `|aiarc_crop`, Cloudflare transforms, or CSS `object-position` with `original_url`.
+
+### Install this fork
+
+1. Deactivate the original **ACF Image Aspect Ratio Crop** plugin (do not run both).
+2. Install [acf-image-aspect-ratio-crop-sr](https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr) from a [release zip](https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr/releases) or your deployment process.
+3. ACF field groups are unchanged — the field type remains `image_aspect_ratio_crop`.
+
+Updates from GitHub use [plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker). Override the repo with:
 
 ```php
-$fp = aiarc_get_focal_point($hero);
-// object-position: {$fp['x']}% {$fp['y']}%;
+add_filter('aiarc_update_repo_url', function ($url) {
+    return 'https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr';
+});
 ```
 
-**Cloudflare:** when Image Transformations are enabled, use `aiarc_cloudflare_recrop_url($hero, $width, $height)` to trim to the stored crop and resize/crop to another aspect ratio using `gravity` from the focal point. `aiarc_get_focal_gravity($hero)` returns the gravity string (e.g. `0.5x0.5`).
+### Automatic data migration
+
+When a post (or options page, etc.) is **loaded in the admin**, legacy values are converted automatically:
+
+| Legacy stored value | Migration behaviour |
+|---------------------|---------------------|
+| Numeric attachment ID (cropped image) | Reads `acf_image_aspect_ratio_crop_original_image_id` and `acf_image_aspect_ratio_crop_coordinates` from that attachment, builds metadata from the **original** image, sets `focal_point` to 50, 50. |
+| JSON from [ACF Image Crop](https://wordpress.org/plugins/acf-image-crop-add-on/) | Uses `original_image` / `cropped_image` IDs and coordinates when present. |
+| Already metadata array | Used as-is; missing `focal_point` defaults to 50, 50 when read. |
+
+The migrated value is **written back** when the field loads in the admin (`acf_update_value` on load). Saving the post persists the new format. You do not need a separate migration script for standard cases.
+
+**Recommendation:** Open important posts in the admin and save once (or bulk-edit) so metadata is stored before relying on front-end URL generation. Re-open crops to set a focal point if needed (legacy migrations use center).
+
+### Update theme and template code
+
+**Original (cropped attachment ID):**
+
+```php
+$image_id = get_field('hero_image'); // int — cropped attachment
+$url = wp_get_attachment_image_url($image_id, 'large');
+echo '<img src="' . esc_url($url) . '" alt="">';
+```
+
+**This fork (metadata array):**
+
+```php
+$hero = get_field('hero_image');
+if ($hero && !empty($hero['crop'])) {
+    echo '<img src="' . esc_url(aiarc_crop_url($hero, 1200)) . '" alt="">';
+}
+```
+
+**Timber:**
+
+```twig
+{# Before: often treated as attachment ID #}
+<img src="{{ Image(hero_image).src }}" alt="">
+
+{# After #}
+<img src="{{ hero_image|aiarc_crop(1200) }}" alt="">
+```
+
+**Checks in PHP:** use `function_exists('aiarc_crop_url')` or test for an array with `crop` keys instead of `is_numeric(get_field(...))`.
+
+### Cropped files in the media library
+
+Old **cropped attachments are not deleted** by this plugin. They remain in the media library but are no longer referenced by the field after migration. You may clean them up manually once you have verified front-end output.
+
+### Focal point after upgrade
+
+- Migrated fields get `focal_point` at **50, 50** until an editor re-crops and moves the marker.
+- For responsive layouts using `object-position`, re-crop important images or accept centered focal until updated.
+- For Cloudflare recrops to new aspect ratios, set focal point before relying on `aiarc_cloudflare_recrop_url()`.
+
+### Cloudflare
+
+If you enable Cloudflare Image Transformations after upgrading, update templates from static cropped URLs to `aiarc_crop_url()` or `aiarc_cloudflare_recrop_url()` as appropriate. Test on a staging environment behind the orange-cloud proxy first.
+
+### Rollback
+
+Rolling back to the original plugin after metadata is saved is **not supported** without restoring a database backup. The original plugin expects a cropped attachment ID, not the metadata array.
 
 ## Screenshots
 
@@ -99,56 +220,48 @@ $fp = aiarc_get_focal_point($hero);
 
 ## Download
 
-You can download the plugin from the [WordPress plugin directory](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/), or download the latest release as a zip file from [GitHub releases](https://github.com/joppuyo/acf-image-aspect-ratio-crop/releases).
-
-### Updates from GitHub
-
-When installed from a GitHub release (e.g. from [studiorepublic/acf-image-aspect-ratio-crop](https://github.com/studiorepublic/acf-image-aspect-ratio-crop)), the plugin checks for updates automatically via [yahnis-elsts/plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker). New releases appear in the WordPress Plugins screen.
+- **This fork:** [GitHub releases — studiorepublic/acf-image-aspect-ratio-crop-sr](https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr/releases)
+- **Original:** [WordPress plugin directory](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/) or [joppuyo/acf-image-aspect-ratio-crop](https://github.com/joppuyo/acf-image-aspect-ratio-crop/releases)
 
 ## Requirements
 
 - WordPress 4.9 or later
-- PHP 5.6 or later
+- PHP 5.6 or later (PHP 7.4+ recommended)
 - Advanced Custom Fields 5.8 or later (Pro or Free)
+- Node 20+ to build admin assets (`npm run build`)
 
-## Compatiblity
+## Compatibility
 
 - Polylang Pro
 - Enable Media Replace
-- WP Offload Media, Media Cloud and other plugins that move media files to remote location
-- **Cloudflare Images** — When your site is behind Cloudflare proxy, enable "Use Cloudflare Image Transformations" in Settings → ACF Image Aspect Ratio Crop. Cropped images will be served via [Cloudflare Image Transformations](https://developers.cloudflare.com/images/transform-images/transform-via-url/) instead of local files. Requires Image Resizing to be enabled in your Cloudflare dashboard.
+- WP Offload Media, Media Cloud and other plugins that move media files to a remote location
+- **Cloudflare Image Transformations** — Settings → ACF Image Aspect Ratio Crop. Serves crops via `/cdn-cgi/image/` when the site is behind the Cloudflare proxy. Requires Image Resizing in the Cloudflare dashboard.
 
 ## Frequently Asked Questions
 
 ### Can I use this plugin with a front-end acf_form?
 
-Yes, this functionality has been added in version 5.0.0. Please test it and give feedback if you encounter any issues.
+Yes, this functionality has been available since version 5.0.0 of the original plugin. Please test on your forms and report issues on the GitHub repo.
 
-### Can I access metadata in the original image from a cropped image?
+### Can I access metadata from the original image?
 
-Yes, the original image data is saved under `original_image` key in the returned ACF array. You can access data such as alt text, description and title this way.
+Yes. The field value includes `attachment_id` and `original_url` for the **uncropped** upload. Use `get_post_meta($hero['attachment_id'], '_wp_attachment_image_alt', true)` for alt text, or ACF on that attachment if configured.
 
 ### Can I use this plugin with Elementor?
 
-No, not really. Elementor only supports built-in ACF fields. Please contact Elementor support and ask them to add support for 3rd party fields. For some workarounds for limited Elementor support, see this [post](https://wordpress.org/support/topic/excellent-plugin-5518/).
+Elementor only supports built-in ACF fields out of the box. See [this support thread](https://wordpress.org/support/topic/excellent-plugin-5518/) for possible workarounds.
 
 ### Can I use this plugin with Beaver Builder?
 
-No, not really. Beaver Builder only supports built-in ACF fields. Please contact Beaver Builder support and ask them to add support for 3rd party fields. However, there is a work around this limitation by using a plugin called "Toolbox For Beaver Builder". Please [see their website](https://beaverplugins.com/) for more details.
+Beaver Builder has limited third-party ACF field support. [Toolbox For Beaver Builder](https://beaverplugins.com/) is a common workaround.
 
-### How is this different from the other plugin?
+### How is this different from ACF Image Crop?
 
-This plugin is similar to [Advanced Custom Fields: Image Crop Add-on](https://wordpress.org/plugins/acf-image-crop-add-on/). I originally created a fork of that plugin to add functionality I need: specifying an aspect ratio instead of pixel size. Unfortunately the plugin doesn't seem to be maintained anymore so my pull request was not merged.
-
-So I created **ACF Image Aspect Ratio Crop** from scratch as an alternative to **ACF Image Crop**.
-
-Possibility to use a pixel size instead of aspect ratio was added later on because I got so many requests for adding that feature.
-
-The other plugin is not actively maintained and does not work well with latest ACF versions. I try to maintain this plugin as best as I can when new versions of ACF and WordPress come out.
+This plugin was created as an alternative to [Advanced Custom Fields: Image Crop Add-on](https://wordpress.org/plugins/acf-image-crop-add-on/), with aspect ratio and pixel size modes. The Studio Republic fork adds metadata-only storage, on-the-fly crops, Cloudflare transforms, and focal point support.
 
 ## Thanks
 
-Special thanks to Anders Thorborg for [ACF Image Crop](https://github.com/andersthorborg/ACF-Image-Crop) which served as a inspiration for this plugin. Also, thanks to Fengyuan Chen for the [cropper.js](https://fengyuanchen.github.io/cropperjs/) library!
+Thanks to Anders Thorborg for [ACF Image Crop](https://github.com/andersthorborg/ACF-Image-Crop), Johannes Siipola for the original **ACF Image Aspect Ratio Crop**, and Fengyuan Chen for [Cropper.js](https://fengyuanchen.github.io/cropperjs/).
 
 ## License
 
