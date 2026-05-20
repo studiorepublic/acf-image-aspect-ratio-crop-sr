@@ -33,7 +33,7 @@ fi
 echo "Releasing v$VERSION..."
 
 # Update plugin version in main file
-sed -i.bak "s/Version: [0-9.]*/Version: $VERSION/" acf-image-aspect-ratio-crop.php
+sed -i.bak "s/Version: [0-9.]*/Version: $VERSION/" acf-image-aspect-ratio-crop-sr.php
 rm -f acf-image-aspect-ratio-crop.php.bak
 
 # Update readme.txt

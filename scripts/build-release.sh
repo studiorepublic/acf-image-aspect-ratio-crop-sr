@@ -16,7 +16,7 @@ PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$PLUGIN_DIR/dist"
 BUILD_DIR="$PLUGIN_DIR/build"
 
-VERSION="${1:-$(grep "Version:" "$PLUGIN_DIR/acf-image-aspect-ratio-crop0sr.php" | sed 's/.*: *//' | tr -d ' ')}"
+VERSION="${1:-$(grep "Version:" "$PLUGIN_DIR/acf-image-aspect-ratio-crop-sr.php" | sed 's/.*: *//' | tr -d ' ')}"
 ZIP_NAME="acf-image-aspect-ratio-crop-sr.zip"
 
 cd "$PLUGIN_DIR"
@@ -71,12 +71,12 @@ rsync -a \
   --exclude='.nvmrc' \
   --exclude='package.json' \
   --exclude='assets/src' \
-  . "$BUILD_DIR/acf-image-aspect-ratio-crop/"
+  . "$BUILD_DIR/acf-image-aspect-ratio-crop-sr/"
 
 echo "Creating zip..."
 # Create zip with plugin directory as root (wp-content/plugins/acf-image-aspect-ratio-crop/)
 cd "$BUILD_DIR"
-zip -r "$DIST_DIR/$ZIP_NAME" "acf-image-aspect-ratio-crop" -x "*.git*" -x "*.DS_Store"
+zip -r "$DIST_DIR/$ZIP_NAME" "acf-image-aspect-ratio-crop-sr" -x "*.git*" -x "*.DS_Store"
 cd "$PLUGIN_DIR"
 
 # Cleanup
