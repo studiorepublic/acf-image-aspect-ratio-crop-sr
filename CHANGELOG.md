@@ -10,6 +10,11 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 - **`aiarc_crop_url()` / `|aiarc_crop`** — Accept standard ACF image arrays, attachment IDs, URL strings, and Timber image objects; returns the image URL (with optional scaling) when the value is not crop metadata.
 
+### Fixed
+
+- **Admin preview 502** — Preview URLs used `h=undefined` because JS read `c.h` instead of `c.height`; invalid crop height could crash image generation.
+- **REST URLs in admin JS** — Upload, crop, get, and preview endpoints now use `rest_url()` (supports custom prefixes like `/api/`).
+
 ## [1.1.3] - 2026-05-20
 
 ### Fixed

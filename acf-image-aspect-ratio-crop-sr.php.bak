@@ -4,7 +4,7 @@
 Plugin Name: Advanced Custom Fields: Image Aspect Ratio Crop (sr)
 Plugin URI: https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr
 Description: ACF field that allows user to crop image to a specific aspect ratio or pixel size
-Version: 1.1.2
+Version: 1.1.3
 Author: Studio Republic - Based on the work of Johannes Siipola
 Author URI: https://www.studiorepublic.com
 License: GPLv2 or later
@@ -249,16 +249,246 @@ function aiarc_get_preview_url($crop_data)
 }
 
 /**
- * Generate cropped image URL from crop metadata (for Timber/front-end).
- * Crops the original image and caches the result in uploads.
+ * Whether the value is AIARC crop metadata (not a standard ACF image array).
  *
- * @param array $crop_data Array with attachment_id, original_url, crop (x, y, width, height).
- * @param int $max_width Optional. Max width to scale down to (preserves aspect ratio).
- * @param int $max_height Optional. Max height to scale down to.
- * @return string URL of cropped image, or original_url on failure.
+ * @param mixed $value Field value or image data.
+ * @return bool
  */
-function aiarc_crop_url($crop_data, $max_width = 0, $max_height = 0)
+function aiarc_is_crop_data($value)
 {
+    return is_array($value) &&
+        !empty($value['attachment_id']) &&
+        !empty($value['crop']) &&
+        isset(
+            $value['crop']['x'],
+            $value['crop']['y'],
+            $value['crop']['width'],
+            $value['crop']['height']
+        );
+}
+
+/**
+ * Resolve a WordPress attachment ID from common image value shapes.
+ *
+ * @param mixed $image Attachment ID, ACF image array, Timber image, or crop metadata.
+ * @return int Attachment ID or 0.
+ */
+function aiarc_resolve_attachment_id($image)
+{
+    if (is_numeric($image)) {
+        $id = (int) $image;
+        return $id > 0 && get_post_type($id) === 'attachment' ? $id : 0;
+    }
+
+    if (is_object($image)) {
+        if (isset($image->ID)) {
+            return (int) $image->ID;
+        }
+        if (isset($image->id)) {
+            return (int) $image->id;
+        }
+    }
+
+    if (is_array($image)) {
+        if (aiarc_is_crop_data($image)) {
+            return (int) $image['attachment_id'];
+        }
+        if (!empty($image['ID'])) {
+            return (int) $image['ID'];
+        }
+        if (!empty($image['id'])) {
+            return (int) $image['id'];
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Resolve an image URL from common value shapes (no cropping).
+ *
+ * @param mixed $image Attachment ID, URL string, ACF image array, or Timber image.
+ * @return string
+ */
+function aiarc_resolve_image_url($image)
+{
+    if (is_string($image)) {
+        return $image;
+    }
+
+    $attachment_id = aiarc_resolve_attachment_id($image);
+    if ($attachment_id) {
+        $url = wp_get_attachment_url($attachment_id);
+        return $url ? $url : '';
+    }
+
+    if (is_array($image) && !empty($image['url'])) {
+        return $image['url'];
+    }
+
+    if (is_object($image)) {
+        if (!empty($image->src)) {
+            return $image->src;
+        }
+        if (!empty($image->url)) {
+            return $image->url;
+        }
+        if (!empty($image->guid)) {
+            return $image->guid;
+        }
+    }
+
+    return '';
+}
+
+/**
+ * Cloudflare transform URL to scale an image (no trim).
+ *
+ * @param string $source Absolute image URL.
+ * @param int    $max_width  Optional max width.
+ * @param int    $max_height Optional max height.
+ * @return string Transform path or empty string.
+ */
+function aiarc_cloudflare_resize_url($source, $max_width = 0, $max_height = 0)
+{
+    if (empty($source)) {
+        return '';
+    }
+
+    $max_width = max(0, (int) $max_width);
+    $max_height = max(0, (int) $max_height);
+
+    $options = [];
+    if ($max_width > 0) {
+        $options[] = 'width=' . $max_width;
+    }
+    if ($max_height > 0) {
+        $options[] = 'height=' . $max_height;
+    }
+    $options[] = 'fit=scale-down';
+
+    return '/cdn-cgi/image/' . implode(',', $options) . '/' . $source;
+}
+
+/**
+ * URL for a standard (non-cropped) image, optionally scaled.
+ *
+ * @param mixed $image Attachment ID, URL, ACF image array, or Timber image.
+ * @param int   $max_width  Optional max width.
+ * @param int   $max_height Optional max height.
+ * @return string
+ */
+function aiarc_standard_image_url($image, $max_width = 0, $max_height = 0)
+{
+    $url = aiarc_resolve_image_url($image);
+    if ($url === '') {
+        return '';
+    }
+
+    $max_width = max(0, (int) $max_width);
+    $max_height = max(0, (int) $max_height);
+
+    $settings = get_option('acf-image-aspect-ratio-crop-settings', []);
+    $cloudflare_images = !empty($settings['cloudflare_images']);
+    if ($cloudflare_images && aiarc_is_cloudflare_proxy()) {
+        if ($max_width > 0 || $max_height > 0) {
+            $cf_url = aiarc_cloudflare_resize_url($url, $max_width, $max_height);
+            if ($cf_url !== '') {
+                return $cf_url;
+            }
+        }
+        return $url;
+    }
+
+    if ($max_width === 0 && $max_height === 0) {
+        return $url;
+    }
+
+    $attachment_id = aiarc_resolve_attachment_id($image);
+    if (!$attachment_id) {
+        return $url;
+    }
+
+    $image_data = wp_get_attachment_metadata($attachment_id);
+    if (!$image_data || empty($image_data['file'])) {
+        return $url;
+    }
+
+    $upload_dir = wp_upload_dir();
+    $base_dir = $upload_dir['basedir'] . '/aiarc-cache';
+    $base_url = $upload_dir['baseurl'] . '/aiarc-cache';
+    $ext = pathinfo($image_data['file'], PATHINFO_EXTENSION);
+    $ext = ($ext === 'jpg' || $ext === 'jpeg') ? 'jpg' : (($ext === 'png') ? 'png' : 'gif');
+    $cache_key = 'aiarc_full_' . md5($attachment_id . $max_width . $max_height);
+    $filename = $cache_key . '.' . $ext;
+    $file_path = $base_dir . '/' . $filename;
+
+    if (file_exists($file_path)) {
+        return $base_url . '/' . $filename;
+    }
+
+    $source_path = $upload_dir['basedir'] . '/' . $image_data['file'];
+    if (!file_exists($source_path)) {
+        return $url;
+    }
+
+    $editor = wp_get_image_editor($source_path);
+    if (is_wp_error($editor)) {
+        return $url;
+    }
+
+    $size = $editor->get_size();
+    if ($size) {
+        $dw = $size['width'];
+        $dh = $size['height'];
+        if ($max_width > 0 && $dw > $max_width) {
+            $ratio = $max_width / $dw;
+            $dw = $max_width;
+            $dh = (int) round($dh * $ratio);
+        }
+        if ($max_height > 0 && $dh > $max_height) {
+            $ratio = $max_height / $dh;
+            $dh = $max_height;
+            $dw = (int) round($dw * $ratio);
+        }
+        $editor->resize($dw, $dh, false);
+    }
+
+    if (!wp_mkdir_p($base_dir)) {
+        return $url;
+    }
+
+    $saved = $editor->save($file_path);
+    if (is_wp_error($saved)) {
+        return $url;
+    }
+
+    return $base_url . '/' . $filename;
+}
+
+/**
+ * Generate image URL from crop metadata or a standard image field value.
+ *
+ * Accepts AIARC crop metadata, ACF image arrays, attachment IDs, image URLs,
+ * or Timber image objects. Non-cropped values return the image URL (scaled when
+ * max dimensions are passed).
+ *
+ * @param mixed $image Crop metadata, attachment ID, URL, ACF image array, etc.
+ * @param int   $max_width  Optional. Max width to scale down to (preserves aspect ratio).
+ * @param int   $max_height Optional. Max height to scale down to.
+ * @return string Image URL, or empty string when the value cannot be resolved.
+ */
+function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
+{
+    if (empty($image) && $image !== 0 && $image !== '0') {
+        return '';
+    }
+
+    if (!aiarc_is_crop_data($image)) {
+        return aiarc_standard_image_url($image, $max_width, $max_height);
+    }
+
+    $crop_data = $image;
     if (
         empty($crop_data['attachment_id']) ||
         empty($crop_data['crop']) ||
@@ -677,11 +907,8 @@ class npx_acf_plugin_image_aspect_ratio_crop
     public function register_timber_twig_filter($filters)
     {
         $filters['aiarc_crop'] = [
-            'callable' => function ($crop_data, $max_width = 0, $max_height = 0) {
-                if (!is_array($crop_data)) {
-                    return '';
-                }
-                return aiarc_crop_url($crop_data, (int) $max_width, (int) $max_height);
+            'callable' => function ($image, $max_width = 0, $max_height = 0) {
+                return aiarc_crop_url($image, (int) $max_width, (int) $max_height);
             },
         ];
         return $filters;

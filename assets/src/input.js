@@ -12,6 +12,54 @@ import { sprintf } from 'sprintf-js';
 (function($) {
   var field = null;
 
+  function aiarcRestUrls() {
+    const urls = (window.aiarc && window.aiarc.rest_urls) || {};
+    const root = (window.aiarc && window.aiarc.api_root) || '';
+    return {
+      upload: urls.upload || `${root}/aiarc/v1/upload`,
+      crop: urls.crop || `${root}/aiarc/v1/crop`,
+      get: urls.get || `${root}/aiarc/v1/get`,
+      preview: urls.preview || window.aiarc.preview_rest_url || `${root}/aiarc/v1/preview`,
+    };
+  }
+
+  function aiarcBuildPreviewUrl(data) {
+    const c = data.crop || {};
+    const nonce = window.aiarc.preview_nonce || window.aiarc.wp_rest_nonce || '';
+    const ajaxBase =
+      window.aiarc.preview_ajax_url ||
+      (typeof ajaxurl !== 'undefined' ? ajaxurl : '');
+    const base = ajaxBase || aiarcRestUrls().preview;
+    const separator = base.indexOf('?') >= 0 ? '&' : '?';
+    const actionPrefix =
+      ajaxBase && base.indexOf('action=aiarc_preview') < 0
+        ? 'action=aiarc_preview&'
+        : '';
+    const previewUrl = `${base}${separator}${actionPrefix}id=${data.attachment_id}&x=${c.x}&y=${c.y}&w=${c.width}&h=${c.height}&_wpnonce=${nonce}`;
+    // #region agent log
+    fetch('http://127.0.0.1:7743/ingest/9f827881-a6d4-4dd9-ad99-4d8dfb5ed04f', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': '7d3f1f',
+      },
+      body: JSON.stringify({
+        sessionId: '7d3f1f',
+        hypothesisId: 'H2',
+        location: 'input.js:aiarcBuildPreviewUrl',
+        message: 'built preview URL',
+        data: {
+          previewUrl,
+          usesAjax: Boolean(ajaxBase),
+          preview_ajax_url: window.aiarc.preview_ajax_url || null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    return previewUrl;
+  }
+
   acf.fields.image_aspect_ratio_crop = acf.field.extend({
     type: 'image_aspect_ratio_crop',
     $el: null,
@@ -85,12 +133,12 @@ import { sprintf } from 'sprintf-js';
         .show();
 
       axios
-        .post(`${window.aiarc.api_root}/aiarc/v1/upload`, formData, settings)
+        .post(`${aiarcRestUrls().upload}`, formData, settings)
         .then(response => {
           // This is just for the preview
           axios
             .get(
-              `${window.aiarc.api_root}/aiarc/v1/get/${response.data.attachment_id}`,
+              `${aiarcRestUrls().get}/${response.data.attachment_id}`,
             )
             .then(response => {
               let attachment = new window.Backbone.Model(response.data);
@@ -115,7 +163,7 @@ import { sprintf } from 'sprintf-js';
 
           axios
             .get(
-              `${window.aiarc.api_root}/aiarc/v1/get/${response.data.attachment_id}`,
+              `${aiarcRestUrls().get}/${response.data.attachment_id}`,
             )
             .then(response => {
               let attachment = new window.Backbone.Model(response.data);
@@ -278,7 +326,7 @@ import { sprintf } from 'sprintf-js';
           let url = null;
 
           if (window.aiarc_settings.rest_api_compat === '') {
-            url = `${window.aiarc.api_root}/aiarc/v1/crop`;
+            url = aiarcRestUrls().crop;
             options = {
               headers: {
                 'X-Aiarc-Nonce': window.aiarc.nonce,
@@ -524,7 +572,7 @@ import { sprintf } from 'sprintf-js';
 
       if (window.aiarc_settings.rest_api_compat === '') {
         axios
-          .get(`${window.aiarc.api_root}/aiarc/v1/get/${originalImageId}`)
+          .get(`${aiarcRestUrls().get}/${originalImageId}`)
           .then(response => callback(response));
       }
 
@@ -986,11 +1034,7 @@ import { sprintf } from 'sprintf-js';
         .first()
         .val(JSON.stringify(data));
 
-      // Build preview URL for cropped result
-      const c = data.crop || {};
-      const nonce = window.aiarc.wp_rest_nonce || '';
-      const previewUrl =
-        `${window.aiarc.api_root}/aiarc/v1/preview?id=${data.attachment_id}&x=${c.x}&y=${c.y}&w=${c.width}&h=${c.height}&_wpnonce=${nonce}`;
+      const previewUrl = aiarcBuildPreviewUrl(data);
 
       const attachmentLike = {
         id: data.attachment_id,

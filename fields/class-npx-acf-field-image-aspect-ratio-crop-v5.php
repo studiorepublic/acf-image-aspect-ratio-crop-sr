@@ -573,6 +573,10 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
                 $this->settings['user_settings']['rest_api_compat'],
         ];
 
+        $rest_urls = function_exists('aiarc_get_rest_endpoint_urls')
+            ? aiarc_get_rest_endpoint_urls()
+            : [];
+
         $data_array = [
             'temp_post_id' => $this->temp_post_id,
             'nonce' => wp_create_nonce('aiarc'),
@@ -580,7 +584,13 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
             // verify_nonce always return false when the API is called on the admin side
             // https://stackoverflow.com/questions/41878315/wp-ajax-nonce-works-when-logged-out-but-not-when-logged-in
             'wp_rest_nonce' => wp_create_nonce('wp_rest'),
+            'preview_nonce' => wp_create_nonce('aiarc_preview'),
+            'preview_ajax_url' => function_exists('aiarc_get_preview_ajax_base_url')
+                ? aiarc_get_preview_ajax_base_url()
+                : add_query_arg('action', 'aiarc_preview', admin_url('admin-ajax.php')),
             'api_root' => untrailingslashit(get_rest_url()),
+            'rest_urls' => $rest_urls,
+            'preview_rest_url' => $rest_urls['preview'] ?? rest_url('aiarc/v1/preview'),
         ];
         wp_localize_script(
             'acf-image-aspect-ratio-crop',
