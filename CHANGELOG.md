@@ -4,6 +4,8 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-05-20
+
 ### Fixed
 
 - **Release zip missing admin assets** — `build-release.sh` used `rsync --exclude='dist'`, which also excluded `assets/dist/`. Exclusion is now `/dist` only. Release build fails if required built files are missing.
