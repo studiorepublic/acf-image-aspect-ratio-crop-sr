@@ -4,6 +4,8 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-05-20
+
 ### Removed
 
 - **Delete unused cropped images (settings)** — Removed the beta settings toggle, daily cron, and legacy attachment cleanup. Crop data is stored as metadata only; unused cropped attachment files are no longer managed by this plugin.
