@@ -111,6 +111,9 @@ The other plugin is not actively maintained and does not work well with latest A
 = 1.1.1 (2026-05-20) =
 * Release
 
+= 1.1.1 (2026-05-20) =
+* Release
+
 = 1.1.0 (2026-05-20) =
 * Release
 
