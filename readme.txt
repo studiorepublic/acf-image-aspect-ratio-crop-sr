@@ -51,6 +51,7 @@ Crop can be done freely, there are no aspect ratio limitations.
 * Enable Media Replace
 * WP Offload Media, Media Cloud and other plugins that move media files to remote location
 * Cloudflare Images - Enable "Use Cloudflare Image Transformations" when your site is behind Cloudflare to serve crops via Cloudflare's image transform URL
+* Crop output quality - Settings screen: compression quality (1-100) for aiarc-cache files and Cloudflare quality= transform parameter
 
 * ACF 5.8 or later (Pro or Free)
 

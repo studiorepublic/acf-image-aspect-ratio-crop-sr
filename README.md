@@ -87,7 +87,7 @@ echo aiarc_object_position_style($hero, true); // style="object-position: 50% 50
 
 When **Use Cloudflare Image Transformations** is enabled (Settings → ACF Image Aspect Ratio Crop) and the site is behind the Cloudflare proxy:
 
-- `aiarc_crop_url()` / `|aiarc_crop` — trim to the stored crop (and optional max dimensions). Outputs **WebP at 90% quality** by default (`format=webp,quality=90` on Cloudflare; WebP files in `uploads/aiarc-cache/`). Filters: `aiarc_crop_output_format`, `aiarc_crop_output_quality`. With Cloudflare enabled, both max width and height use `fit=cover` and focal **gravity** automatically.
+- `aiarc_crop_url()` / `|aiarc_crop` — trim to the stored crop (and optional max dimensions). **Format** (AVIF, WebP, or JPEG) and **quality** (1–100, default 90) are set under Settings → ACF Image Aspect Ratio Crop; used in Cloudflare URLs as `format=` / `quality=` and for files in `uploads/aiarc-cache/` (quality via `wp_editor_set_quality`). Filters: `aiarc_crop_output_format`, `aiarc_crop_output_quality`. `aiarc_crop_source_mime_type()` returns the matching MIME type for `<picture>` sources. With Cloudflare enabled, both max width and height use `fit=cover` and focal **gravity** automatically.
 - `aiarc_cloudflare_recrop_url($hero, $width, $height)` — same recrop URL builder used internally by `aiarc_crop_url()` when both dimensions are passed.
 - `aiarc_get_focal_gravity($hero)` — returns a Cloudflare gravity string (e.g. `0.5x0.5` for center).
 
@@ -242,6 +242,7 @@ Rolling back to the original plugin after metadata is saved is **not supported**
 - Enable Media Replace
 - WP Offload Media, Media Cloud and other plugins that move media files to a remote location
 - **Cloudflare Image Transformations** — Settings → ACF Image Aspect Ratio Crop. Serves crops via `/cdn-cgi/image/` when the site is behind the Cloudflare proxy. Requires Image Resizing in the Cloudflare dashboard.
+- **Crop output quality** — Settings → ACF Image Aspect Ratio Crop (1–100, default 90). Applies to Cloudflare transform URLs and local disk cache.
 
 ## Frequently Asked Questions
 

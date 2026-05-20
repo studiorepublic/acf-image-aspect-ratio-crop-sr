@@ -4,10 +4,16 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+### Removed
+
+- **Delete unused cropped images (settings)** — Removed the beta settings toggle, daily cron, and legacy attachment cleanup. Crop data is stored as metadata only; unused cropped attachment files are no longer managed by this plugin.
+
 ### Added
 
+- **Default crop output format (settings)** — Settings → ACF Image Aspect Ratio Crop: AVIF, WebP, or JPEG (default AVIF). Drives `aiarc_crop_output_format()` for Cloudflare `format=` URLs and local `aiarc-cache`. `aiarc_crop_output_format` filter still overrides (including `png` and `auto`).
+- **Crop output quality (settings)** — Settings → ACF Image Aspect Ratio Crop: integer 1–100 (default 90). Drives `aiarc_crop_output_quality()` for Cloudflare `quality=` URLs and local `aiarc-cache` via `wp_editor_set_quality` (WebP, AVIF, JPEG). `aiarc_crop_output_quality` filter still overrides.
 - **`aiarc_object_position_style()`** / **`|aiarc_object_position_style`** — Returns an inline `style="object-position: …"` attribute from crop focal metadata (empty when disabled or value is not crop data).
-- **`aiarc_crop_url()` WebP output** — Cropped URLs default to WebP at 90% quality (Cloudflare `format=webp,quality=90` and disk cache). Override with `aiarc_crop_output_format` and `aiarc_crop_output_quality` filters.
+- **`aiarc_crop_url()` AVIF output** — Cropped URLs default to AVIF at 90% quality (Cloudflare `format=avif,quality=90` and disk cache). Disk cache falls back avif → webp → jpeg when the server cannot encode AVIF (requires WordPress 6.5+ and GD/Imagick with AVIF). Override with `aiarc_crop_output_format` and `aiarc_crop_output_quality` filters. Added `aiarc_crop_source_mime_type()` for `<source type="…">` hints.
 
 ### Changed
 

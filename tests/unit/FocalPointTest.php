@@ -7,8 +7,14 @@ class FocalPointTest extends \Codeception\Test\Unit
      */
     protected $tester;
 
+    /**
+     * @var array<string, mixed>|null
+     */
+    private static $test_plugin_settings;
+
     protected function _before()
     {
+        self::$test_plugin_settings = null;
         if (!defined('ABSPATH')) {
             define('ABSPATH', dirname(__DIR__, 2) . '/');
         }
@@ -19,6 +25,31 @@ class FocalPointTest extends \Codeception\Test\Unit
             function esc_attr($text)
             {
                 return (string) $text;
+            }
+        }
+        if (!function_exists('wp_image_editor_supports')) {
+            function wp_image_editor_supports($args = [])
+            {
+                return false;
+            }
+        }
+        if (!function_exists('get_option')) {
+            function get_option($option, $default = false)
+            {
+                if (
+                    $option === 'acf-image-aspect-ratio-crop-settings' &&
+                    FocalPointTest::$test_plugin_settings !== null
+                ) {
+                    return FocalPointTest::$test_plugin_settings;
+                }
+
+                return $default;
+            }
+        }
+        if (!function_exists('apply_filters')) {
+            function apply_filters($hook, $value)
+            {
+                return $value;
             }
         }
         if (!function_exists('aiarc_normalize_focal_point')) {
@@ -90,8 +121,80 @@ class FocalPointTest extends \Codeception\Test\Unit
         $this->assertSame('', aiarc_object_position_style(['ID' => 1, 'url' => 'https://example.com/a.jpg']));
     }
 
+    public function testCropOutputFormatFromPluginSettings()
+    {
+        self::$test_plugin_settings = [
+            'crop_output_format' => 'webp',
+        ];
+
+        $this->assertSame('webp', aiarc_crop_output_format());
+    }
+
+    public function testCropOutputFormatSettingRejectsInvalidValue()
+    {
+        self::$test_plugin_settings = [
+            'crop_output_format' => 'png',
+        ];
+
+        $this->assertSame('avif', aiarc_crop_output_format());
+    }
+
+    public function testCropOutputQualityFromPluginSettings()
+    {
+        self::$test_plugin_settings = [
+            'crop_output_quality' => 75,
+        ];
+
+        $this->assertSame(75, aiarc_crop_output_quality());
+    }
+
+    public function testCloudflareRecropUrlUsesFormatFromSettings()
+    {
+        self::$test_plugin_settings = [
+            'crop_output_format' => 'webp',
+            'crop_output_quality' => 90,
+        ];
+
+        $crop_data = [
+            'original_url' => 'https://example.com/image.jpg',
+            'crop' => [
+                'x' => 10,
+                'y' => 20,
+                'width' => 800,
+                'height' => 450,
+            ],
+        ];
+
+        $url = aiarc_cloudflare_recrop_url($crop_data, 400, 400);
+        $this->assertStringContainsString('format=webp', $url);
+    }
+
+    public function testCloudflareRecropUrlUsesQualityFromSettings()
+    {
+        self::$test_plugin_settings = [
+            'crop_output_quality' => 75,
+        ];
+
+        $crop_data = [
+            'original_url' => 'https://example.com/image.jpg',
+            'crop' => [
+                'x' => 10,
+                'y' => 20,
+                'width' => 800,
+                'height' => 450,
+            ],
+        ];
+
+        $url = aiarc_cloudflare_recrop_url($crop_data, 400, 400);
+        $this->assertStringContainsString('quality=75', $url);
+    }
+
     public function testCloudflareRecropUrlIncludesGravity()
     {
+        self::$test_plugin_settings = [
+            'crop_output_quality' => 90,
+        ];
+
         $crop_data = [
             'original_url' => 'https://example.com/image.jpg',
             'crop' => [
@@ -107,8 +210,33 @@ class FocalPointTest extends \Codeception\Test\Unit
         $this->assertStringContainsString('gravity=0.250x0.750', $url);
         $this->assertStringContainsString('fit=cover', $url);
         $this->assertStringContainsString('trim.left=10', $url);
-        $this->assertStringContainsString('format=webp', $url);
+        $this->assertStringContainsString('format=avif', $url);
         $this->assertStringContainsString('quality=90', $url);
+    }
+
+    public function testCropFormatFallbackChainForAvif()
+    {
+        $this->assertSame(['avif', 'webp', 'jpeg'], aiarc_crop_format_fallback_chain('avif'));
+        $this->assertSame(['webp', 'jpeg'], aiarc_crop_format_fallback_chain('webp'));
+    }
+
+    public function testCropCacheExtensionMapsFormats()
+    {
+        $this->assertSame('avif', aiarc_crop_cache_extension('avif'));
+        $this->assertSame('webp', aiarc_crop_cache_extension('webp'));
+        $this->assertSame('jpg', aiarc_crop_cache_extension('jpeg'));
+    }
+
+    public function testResolveDiskCacheFormatFallsBackToJpegWithoutEditorSupport()
+    {
+        $this->assertSame('jpeg', aiarc_resolve_disk_cache_format());
+    }
+
+    public function testCropSourceMimeTypeDefaultsToAvifOnCloudflarePath()
+    {
+        $_SERVER['HTTP_CF_RAY'] = 'test';
+        $this->assertSame('image/avif', aiarc_crop_source_mime_type());
+        unset($_SERVER['HTTP_CF_RAY']);
     }
 
     public function testIsCropDataRecognizesMetadata()

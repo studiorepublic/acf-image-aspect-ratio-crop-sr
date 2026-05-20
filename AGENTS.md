@@ -58,7 +58,7 @@ The field stores an array (no cropped image file):
 
 ## Cloudflare Images
 
-When "Use Cloudflare Image Transformations" is enabled, `aiarc_use_cloudflare_transforms()` (settings + `CF-Ray`/`CF-Connecting-IP`) gates Cloudflare URLs. `aiarc_crop_url()` calls `aiarc_cloudflare_recrop_url()` when both max width and height are set (focal via `gravity`), otherwise `aiarc_cloudflare_crop_url()` (trim + optional `scale-down`). `aiarc_get_preview_url` uses the same gate for admin preview.
+When "Use Cloudflare Image Transformations" is enabled, `aiarc_use_cloudflare_transforms()` (settings + `CF-Ray`/`CF-Connecting-IP`) gates Cloudflare URLs. **Crop output format** (`crop_output_format`: avif, webp, or jpeg, default avif) and **crop output quality** (`crop_output_quality`, default 90) live in `acf-image-aspect-ratio-crop-settings` and are exposed via `aiarc_crop_output_format()` / `aiarc_crop_output_quality()` (Cloudflare `format=` / `quality=` + disk cache). `wp_editor_set_quality` filter `aiarc_filter_wp_editor_set_quality` applies quality for WebP/AVIF/JPEG when WordPress resets quality on format conversion. Disk cache uses `aiarc_resolve_disk_cache_format()` (avif → webp → jpeg fallback when encoding fails). Calls `aiarc_cloudflare_recrop_url()` when both max width and height are set (focal via `gravity`), otherwise `aiarc_cloudflare_crop_url()` (trim + optional `scale-down`). `aiarc_crop_source_mime_type()` for picture `type` attributes.
 
 Non-Cloudflare sites: use `crop.focal_point` with CSS `object-position: {x}% {y}%` and `object-fit: cover`.
 

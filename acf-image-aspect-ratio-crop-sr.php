@@ -178,16 +178,65 @@ function aiarc_is_cloudflare_proxy()
 }
 
 /**
+ * Plugin settings from the database merged with defaults.
+ *
+ * @return array<string, mixed>
+ */
+function aiarc_plugin_settings()
+{
+    $defaults = [
+        'modal_type' => 'cropped',
+        'rest_api_compat' => false,
+        'cloudflare_images' => false,
+        'crop_output_format' => 'avif',
+        'crop_output_quality' => 90,
+    ];
+
+    $settings = get_option('acf-image-aspect-ratio-crop-settings', []);
+
+    return is_array($settings) ? array_merge($defaults, $settings) : $defaults;
+}
+
+/**
+ * Output formats available in plugin settings.
+ *
+ * @return string[]
+ */
+function aiarc_crop_output_formats_for_settings()
+{
+    return ['webp', 'avif', 'jpeg'];
+}
+
+/**
+ * Sanitize a crop output format from settings (webp, avif, jpeg only).
+ *
+ * @param mixed $format Raw setting value.
+ * @return string
+ */
+function aiarc_sanitize_crop_output_format_setting($format)
+{
+    $format = strtolower((string) $format);
+
+    return in_array($format, aiarc_crop_output_formats_for_settings(), true)
+        ? $format
+        : 'avif';
+}
+
+/**
  * Default output format for aiarc_crop_url() (Cloudflare and disk cache).
  *
- * @return string e.g. webp, avif, jpeg, png, auto.
+ * @return string e.g. avif, webp, jpeg, png, auto.
  */
 function aiarc_crop_output_format()
 {
-    $format = strtolower((string) apply_filters('aiarc_crop_output_format', 'webp'));
+    $settings = aiarc_plugin_settings();
+    $default = isset($settings['crop_output_format'])
+        ? aiarc_sanitize_crop_output_format_setting($settings['crop_output_format'])
+        : 'avif';
+    $format = strtolower((string) apply_filters('aiarc_crop_output_format', $default));
     $allowed = ['webp', 'avif', 'jpeg', 'png', 'auto'];
 
-    return in_array($format, $allowed, true) ? $format : 'webp';
+    return in_array($format, $allowed, true) ? $format : 'avif';
 }
 
 /**
@@ -197,15 +246,165 @@ function aiarc_crop_output_format()
  */
 function aiarc_crop_output_quality()
 {
-    $quality = (int) apply_filters('aiarc_crop_output_quality', 90);
+    $settings = aiarc_plugin_settings();
+    $default = isset($settings['crop_output_quality'])
+        ? (int) $settings['crop_output_quality']
+        : 90;
+    $quality = (int) apply_filters('aiarc_crop_output_quality', $default);
 
     return max(1, min(100, $quality));
 }
 
 /**
+ * Apply plugin crop quality when WordPress resets quality on format conversion.
+ *
+ * @param int    $quality   Default quality from WordPress.
+ * @param string $mime_type Output mime type.
+ * @return int
+ */
+function aiarc_filter_wp_editor_set_quality($quality, $mime_type)
+{
+    if (in_array($mime_type, ['image/webp', 'image/avif', 'image/jpeg'], true)) {
+        return aiarc_crop_output_quality();
+    }
+
+    return $quality;
+}
+
+/**
+ * Register image quality filters.
+ */
+function aiarc_register_image_quality_filters()
+{
+    add_filter('wp_editor_set_quality', 'aiarc_filter_wp_editor_set_quality', 10, 2);
+}
+
+if (!defined('AIARC_UNIT_TEST')) {
+    add_action('init', 'aiarc_register_image_quality_filters');
+}
+
+/**
+ * MIME type for a crop output format.
+ *
+ * @param string $format avif, webp, jpeg, or png.
+ * @return string|null
+ */
+function aiarc_image_mime_for_format($format)
+{
+    $map = [
+        'avif' => 'image/avif',
+        'webp' => 'image/webp',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+    ];
+
+    return $map[$format] ?? null;
+}
+
+/**
+ * Whether the active image editor can save a given format.
+ *
+ * @param string $format avif, webp, jpeg, or png.
+ * @return bool
+ */
+function aiarc_image_editor_supports_format($format)
+{
+    $mime = aiarc_image_mime_for_format($format);
+    if ($mime === null || !function_exists('wp_image_editor_supports')) {
+        return false;
+    }
+
+    return wp_image_editor_supports(['mime_type' => $mime]);
+}
+
+/**
+ * Fallback order for disk cache when the requested format is unavailable.
+ *
+ * @param string|null $requested Format from aiarc_crop_output_format().
+ * @return string[]
+ */
+function aiarc_crop_format_fallback_chain($requested = null)
+{
+    $requested = $requested ?? aiarc_crop_output_format();
+
+    if ($requested === 'jpeg') {
+        return ['jpeg'];
+    }
+    if ($requested === 'png') {
+        return ['png', 'jpeg'];
+    }
+    if ($requested === 'webp') {
+        return ['webp', 'jpeg'];
+    }
+    if ($requested === 'avif') {
+        return ['avif', 'webp', 'jpeg'];
+    }
+
+    // auto (Cloudflare) and unknown: prefer modern formats on disk.
+    return ['avif', 'webp', 'jpeg'];
+}
+
+/**
+ * Best on-disk crop format supported by the server.
+ *
+ * @return string avif, webp, jpeg, or png.
+ */
+function aiarc_resolve_disk_cache_format()
+{
+    foreach (aiarc_crop_format_fallback_chain() as $format) {
+        if (aiarc_image_editor_supports_format($format)) {
+            return $format;
+        }
+    }
+
+    return 'jpeg';
+}
+
+/**
+ * File extension for a crop cache file.
+ *
+ * @param string|null $format avif, webp, jpeg, or png.
+ * @return string Without leading dot.
+ */
+function aiarc_crop_cache_extension($format = null)
+{
+    $format = $format ?? aiarc_resolve_disk_cache_format();
+    $map = [
+        'avif' => 'avif',
+        'webp' => 'webp',
+        'jpeg' => 'jpg',
+        'png' => 'png',
+    ];
+
+    return $map[$format] ?? 'jpg';
+}
+
+/**
+ * MIME type for <source type="…"> and Content-Type hints.
+ *
+ * @return string e.g. image/avif.
+ */
+function aiarc_crop_source_mime_type()
+{
+    if (aiarc_use_cloudflare_transforms()) {
+        $format = aiarc_crop_output_format();
+        if ($format === 'auto') {
+            return 'image/avif';
+        }
+        $mime = aiarc_image_mime_for_format($format);
+
+        return $mime ?? 'image/jpeg';
+    }
+
+    $mime = aiarc_image_mime_for_format(aiarc_resolve_disk_cache_format());
+
+    return $mime ?? 'image/jpeg';
+}
+
+/**
  * Cloudflare transform options for format and quality.
  *
- * @return string e.g. ",format=webp,quality=90".
+ * @return string e.g. ",format=avif,quality=90".
  */
 function aiarc_cloudflare_format_quality_suffix()
 {
@@ -424,7 +623,7 @@ function aiarc_cloudflare_recrop_url($crop_data, $width, $height, $fit = 'cover'
 }
 
 /**
- * Save a WP image editor instance to the aiarc cache as WebP (or JPEG fallback).
+ * Save a WP image editor instance to the aiarc cache (AVIF, WebP, or JPEG fallback).
  *
  * @param WP_Image_Editor $editor Image editor after crop/resize.
  * @param string          $file_path Target file path including extension.
@@ -433,20 +632,22 @@ function aiarc_cloudflare_recrop_url($crop_data, $width, $height, $fit = 'cover'
 function aiarc_save_crop_cache_file($editor, $file_path)
 {
     $editor->set_quality(aiarc_crop_output_quality());
+    $base = preg_replace('/\.[^.]+$/', '', $file_path);
 
-    if (
-        aiarc_crop_output_format() === 'webp' &&
-        function_exists('wp_image_editor_supports') &&
-        wp_image_editor_supports(['mime_type' => 'image/webp'])
-    ) {
-        return $editor->save($file_path, 'image/webp');
+    foreach (aiarc_crop_format_fallback_chain() as $format) {
+        if (!aiarc_image_editor_supports_format($format)) {
+            continue;
+        }
+
+        $mime = aiarc_image_mime_for_format($format);
+        $path = $base . '.' . aiarc_crop_cache_extension($format);
+        $saved = $editor->save($path, $mime);
+        if (!is_wp_error($saved)) {
+            return $saved;
+        }
     }
 
-    if (preg_match('/\.jpe?g$/i', $file_path)) {
-        return $editor->save($file_path, 'image/jpeg');
-    }
-
-    return $editor->save($file_path);
+    return $editor->save($base . '.jpg', 'image/jpeg');
 }
 
 /**
@@ -717,6 +918,7 @@ function aiarc_standard_image_url($image, $max_width = 0, $max_height = 0)
  * @param int   $max_width  Optional. Max width to scale down to (preserves aspect ratio).
  * @param int   $max_height Optional. Max height to scale down to. When both are set and
  *                          Cloudflare transforms are active, uses fit=cover with focal gravity.
+ *                          Default output is AVIF at 90% quality (see aiarc_crop_output_format).
  * @return string Image URL, or empty string when the value cannot be resolved.
  */
 function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
@@ -760,15 +962,12 @@ function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
     $max_width = max(0, (int) $max_width);
     $max_height = max(0, (int) $max_height);
 
-    $output_format = aiarc_crop_output_format();
+    $cache_format = aiarc_resolve_disk_cache_format();
     $output_quality = aiarc_crop_output_quality();
-    $use_webp = $output_format === 'webp' &&
-        function_exists('wp_image_editor_supports') &&
-        wp_image_editor_supports(['mime_type' => 'image/webp']);
-    $cache_ext = $use_webp ? 'webp' : 'jpg';
+    $cache_ext = aiarc_crop_cache_extension($cache_format);
 
     $cache_key = 'aiarc_' . md5(
-        $id . $x . $y . $w . $h . $max_width . $max_height . $cache_ext . $output_quality
+        $id . $x . $y . $w . $h . $max_width . $max_height . $cache_format . $output_quality
     );
 
     $image_data = wp_get_attachment_metadata($id);
@@ -824,6 +1023,10 @@ function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
     $saved = aiarc_save_crop_cache_file($image, $file_path);
     if (is_wp_error($saved)) {
         return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
+    }
+
+    if (!empty($saved['path'])) {
+        return $base_url . '/' . basename($saved['path']);
     }
 
     return $base_url . '/' . $filename;
@@ -1031,18 +1234,9 @@ class npx_acf_plugin_image_aspect_ratio_crop
         );
 
 
-        if (!wp_next_scheduled('aiarc_delete_unused_attachments')) {
-            wp_schedule_event(
-                time(),
-                'daily',
-                'aiarc_delete_unused_attachments'
-            );
+        if (wp_next_scheduled('aiarc_delete_unused_attachments')) {
+            wp_clear_scheduled_hook('aiarc_delete_unused_attachments');
         }
-
-        add_action('aiarc_delete_unused_attachments', [
-            $this,
-            'delete_unused_attachments',
-        ]);
 
         add_filter('wpgraphql_acf_supported_fields', function (
             $supported_fields
@@ -1206,12 +1400,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
                 $settings['modal_type'] = $_POST['modal_type'];
             }
 
-            if (!empty($_POST['delete_unused'])) {
-                $settings['delete_unused'] = filter_var(
-                    $_POST['delete_unused'],
-                    FILTER_VALIDATE_BOOLEAN
-                );
-            }
+            unset($settings['delete_unused']);
 
             if (!empty($_POST['rest_api_compat'])) {
                 $settings['rest_api_compat'] = filter_var(
@@ -1237,13 +1426,31 @@ class npx_acf_plugin_image_aspect_ratio_crop
                 $settings['cloudflare_images'] = $requested_cloudflare;
             }
 
+            if (isset($_POST['crop_output_format'])) {
+                $settings['crop_output_format'] = aiarc_sanitize_crop_output_format_setting(
+                    $_POST['crop_output_format']
+                );
+            }
+
+            if (isset($_POST['crop_output_quality'])) {
+                $settings['crop_output_quality'] = max(
+                    1,
+                    min(100, (int) $_POST['crop_output_quality'])
+                );
+            }
+
             update_option('acf-image-aspect-ratio-crop-settings', $settings);
             $updated = true;
         }
         $modal_type = $settings['modal_type'];
-        $delete_unused = $settings['delete_unused'];
         $rest_api_compat = $settings['rest_api_compat'];
         $cloudflare_images = $settings['cloudflare_images'];
+        $crop_output_format = isset($settings['crop_output_format'])
+            ? aiarc_sanitize_crop_output_format_setting($settings['crop_output_format'])
+            : 'avif';
+        $crop_output_quality = isset($settings['crop_output_quality'])
+            ? max(1, min(100, (int) $settings['crop_output_quality']))
+            : 90;
 
         echo '<div class="wrap">';
         echo '<h1>' .
@@ -1285,35 +1492,6 @@ class npx_acf_plugin_image_aspect_ratio_crop
             '><label for="original"> ' .
             __('Original image', 'acf-image-aspect-ratio-crop-sr') .
             '</label></p>';
-        echo '</td>';
-        echo '</tr>';
-        echo '<tr>';
-        echo '<th scope="row">';
-        echo '<label for="modal_type">' .
-            __('Delete unused cropped images', 'acf-image-aspect-ratio-crop-sr') .
-            ' ' .
-            __('(Beta feature)', 'acf-image-aspect-ratio-crop-sr') .
-            '</label>';
-        echo '</th>';
-        echo '<td>';
-        echo '<p><input type="radio" id="delete_unused_true" name="delete_unused" value="true" ' .
-            checked($delete_unused, true, false) .
-            '><label for="delete_unused_true"> ' .
-            __('Enabled', 'acf-image-aspect-ratio-crop-sr') .
-            '</label></p>';
-        echo '<p><input type="radio" id="delete_unused_false" name="delete_unused" value="false" ' .
-            checked($delete_unused, false, false) .
-            '><label for="delete_unused_false"> ' .
-            __('Disabled', 'acf-image-aspect-ratio-crop-sr') .
-            '</label></p>';
-        echo '</td>';
-        echo '</tr>';
-        echo '<tr>';
-        echo '<td colspan="2" style="padding: 0">';
-        echo __(
-            'Please note that "Delete unused cropped images" feature is a beta feature because it requires more testing. Please do not enable the option without first backing up your database and uploads in order to prevent potential data loss.',
-            'acf-image-aspect-ratio-crop-sr'
-        );
         echo '</td>';
         echo '</tr>';
         echo '<tr>';
@@ -1370,6 +1548,51 @@ class npx_acf_plugin_image_aspect_ratio_crop
         );
         echo '</td>';
         echo '</tr>';
+        echo '<tr>';
+        echo '<th scope="row">';
+        echo '<label for="crop_output_format">' .
+            __('Default crop output format', 'acf-image-aspect-ratio-crop-sr') .
+            '</label>';
+        echo '</th>';
+        echo '<td>';
+        echo '<select id="crop_output_format" name="crop_output_format">';
+        foreach (aiarc_crop_output_formats_for_settings() as $format_option) {
+            echo '<option value="' . esc_attr($format_option) . '" ' .
+                selected($crop_output_format, $format_option, false) .
+                '>' .
+                esc_html(strtoupper($format_option)) .
+                '</option>';
+        }
+        echo '</select>';
+        echo '</td>';
+        echo '</tr>';
+        echo '<tr>';
+        echo '<td colspan="2" style="padding: 0">';
+        echo __(
+            'File format for cropped images from aiarc_crop_url(). Applies to files in uploads/aiarc-cache/ and to the format= parameter in Cloudflare image transform URLs when Cloudflare is enabled. If AVIF is selected but the server cannot encode AVIF, the plugin falls back to WebP then JPEG. The aiarc_crop_output_format filter can still override this value.',
+            'acf-image-aspect-ratio-crop-sr'
+        );
+        echo '</td>';
+        echo '</tr>';
+        echo '<tr>';
+        echo '<th scope="row">';
+        echo '<label for="crop_output_quality">' .
+            __('Crop output quality', 'acf-image-aspect-ratio-crop-sr') .
+            '</label>';
+        echo '</th>';
+        echo '<td>';
+        echo '<input type="number" id="crop_output_quality" name="crop_output_quality" ' .
+            'min="1" max="100" step="1" value="' . esc_attr((string) $crop_output_quality) . '" class="small-text">';
+        echo '</td>';
+        echo '</tr>';
+        echo '<tr>';
+        echo '<td colspan="2" style="padding: 0">';
+        echo __(
+            'Compression quality (1–100) for cropped images. Applies to files in uploads/aiarc-cache/ and to the quality= parameter in Cloudflare image transform URLs when Cloudflare is enabled. Lower values produce smaller files with more visible compression.',
+            'acf-image-aspect-ratio-crop-sr'
+        );
+        echo '</td>';
+        echo '</tr>';
         echo '</tbody>';
         echo '</table>';
         echo '<p class="submit">';
@@ -1412,9 +1635,10 @@ class npx_acf_plugin_image_aspect_ratio_crop
 
         $default_user_settings = [
             'modal_type' => 'cropped',
-            'delete_unused' => false,
             'rest_api_compat' => false,
             'cloudflare_images' => false,
+            'crop_output_format' => 'avif',
+            'crop_output_quality' => 90,
         ];
 
         $this->user_settings = array_merge($default_user_settings, $settings);
@@ -1428,36 +1652,6 @@ class npx_acf_plugin_image_aspect_ratio_crop
     {
         if ($this->temp_path) {
             @unlink($this->temp_path);
-        }
-    }
-
-    public function delete_unused_attachments()
-    {
-        $this->debug('delete unused attachments cron');
-
-        // Bail early if unused attachment deletion is disabled
-        if (!$this->user_settings['delete_unused']) {
-            $this->debug('user has disabled unused attachment deletion');
-            return;
-        }
-
-        $timestamp = (new DateTime())->modify('-7 days')->format('U');
-
-        $posts = get_posts([
-            'post_type' => 'attachment',
-            'meta_query' => [
-                [
-                    'key' => 'acf_image_aspect_ratio_crop_timestamp',
-                    'compare' => '<',
-                    'value' => $timestamp,
-                    'type' => 'numeric',
-                ],
-            ],
-        ]);
-
-        foreach ($posts as $post) {
-            $this->debug('deleting unused attachment ' . $post->ID);
-            wp_delete_attachment($post->ID, true);
         }
     }
 
