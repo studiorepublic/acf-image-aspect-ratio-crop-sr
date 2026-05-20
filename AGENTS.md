@@ -31,7 +31,7 @@ Manual build: `./scripts/build-release.sh [version]` — output in `dist/acf-ima
 
 ## Key Files
 
-- `acf-image-aspect-ratio-crop.php` — Main bootstrap, update checker, REST API, `build_crop_metadata`, `aiarc_crop_url`, `aiarc_cloudflare_crop_url`, `aiarc_is_cloudflare_proxy`, preview endpoint
+- `acf-image-aspect-ratio-crop.php` — Main bootstrap, update checker, REST API, `build_crop_metadata`, `aiarc_crop_url`, `aiarc_cloudflare_crop_url`, `aiarc_cloudflare_recrop_url`, `aiarc_get_focal_point`, `aiarc_get_focal_gravity`, `aiarc_is_cloudflare_proxy`, preview endpoint
 - `fields/class-npx-acf-field-image-aspect-ratio-crop-v5.php` — ACF field class (load_value, update_value, format_value, render_field)
 - `assets/src/input.js` — Field UI, Cropper.js integration
 
@@ -43,14 +43,24 @@ The field stores an array (no cropped image file):
 [
     'attachment_id' => 123,
     'original_url' => '...',
-    'crop' => ['x' => 120, 'y' => 80, 'width' => 1600, 'height' => 900],
+    'crop' => [
+        'x' => 120,
+        'y' => 80,
+        'width' => 1600,
+        'height' => 900,
+        'focal_point' => ['x' => 50.0, 'y' => 50.0],
+    ],
     'aspect_ratio' => '16:9',
 ]
 ```
 
+`focal_point` is optional on legacy values; `aiarc_get_focal_point()` defaults to 50, 50.
+
 ## Cloudflare Images
 
-When "Use Cloudflare Image Transformations" is enabled in settings, `aiarc_crop_url` and `aiarc_get_preview_url` return Cloudflare `/cdn-cgi/image/` URLs. Requires site behind Cloudflare proxy (detected via `CF-Ray`/`CF-Connecting-IP` headers). `aiarc_cloudflare_crop_url()` builds the transform URL; `aiarc_is_cloudflare_proxy()` checks request headers.
+When "Use Cloudflare Image Transformations" is enabled in settings, `aiarc_crop_url` and `aiarc_get_preview_url` return Cloudflare `/cdn-cgi/image/` URLs. Requires site behind Cloudflare proxy (detected via `CF-Ray`/`CF-Connecting-IP` headers). `aiarc_cloudflare_crop_url()` builds the trim URL; `aiarc_cloudflare_recrop_url($crop_data, $width, $height)` trims then resizes with `fit=cover` and `gravity` from focal point; `aiarc_is_cloudflare_proxy()` checks request headers.
+
+Non-Cloudflare sites: use `crop.focal_point` with CSS `object-position: {x}% {y}%` and `object-fit: cover`.
 
 ## Timber Usage
 

@@ -9,7 +9,7 @@ This is a WordPress plugin that extends Advanced Custom Fields (ACF) with an ima
 - **PHP**: WordPress 4.9+, PHP 5.6+, ACF 5.8+
 - **JavaScript**: jQuery, ACF JS framework (acf.field.extend), Backbone, axios, Cropper.js
 - **Styles**: SCSS with Sass, PostCSS (autoprefixer)
-- **Build**: Webpack 4, Babel (@babel/preset-env)
+- **Build**: Webpack 5, Babel (@babel/preset-env), Node 20+
 - **Testing**: Codeception (WP-Browser), acceptance + unit + wpunit suites
 - **Environment**: Docker (docker-compose), Composer, npm
 

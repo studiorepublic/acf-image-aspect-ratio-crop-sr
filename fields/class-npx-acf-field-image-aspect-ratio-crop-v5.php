@@ -412,6 +412,13 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
         if ($coordinates !== null) {
             $div['data-coordinates'] = wp_json_encode($coordinates);
         }
+        if (
+            is_array($value_data) &&
+            !empty($value_data['crop']['focal_point']) &&
+            is_array($value_data['crop']['focal_point'])
+        ) {
+            $div['data-focal-point'] = wp_json_encode($value_data['crop']['focal_point']);
+        }
         if ($original_image_id) {
             $div['data-original-image-id'] = $original_image_id;
         }
@@ -529,6 +536,10 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
             'cancel' => __('Cancel', 'acf-image-aspect-ratio-crop'),
             'modal_title' => __('Crop image', 'acf-image-aspect-ratio-crop'),
             'reset' => __('Reset crop', 'acf-image-aspect-ratio-crop'),
+            'focal_point_label' => __(
+                'Drag to set focal point',
+                'acf-image-aspect-ratio-crop'
+            ),
             'upload_progress' => __(
                 'Uploading image. Progress %d%%.',
                 'acf-image-aspect-ratio-crop'
@@ -810,6 +821,7 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
                 'y' => (int) ($coordinates['y'] ?? 0),
                 'width' => $w,
                 'height' => $h,
+                'focal_point' => aiarc_normalize_focal_point(null, null),
             ],
             'aspect_ratio' => $aspect_ratio,
         ];

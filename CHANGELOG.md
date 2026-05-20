@@ -4,6 +4,12 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Focal point** — Draggable marker inside the crop box (default center). Saved as `crop.focal_point` percentages (0–100) relative to the crop rectangle.
+- **`aiarc_get_focal_point()`** / **`aiarc_get_focal_gravity()`** — Read focal metadata; convert to Cloudflare `gravity` (e.g. `0.5x0.5`).
+- **`aiarc_cloudflare_recrop_url()`** — Trim to stored crop, then `fit=cover` (or `crop`) to a target size using focal gravity.
+
 ## [1.0.0] - 2026-03-13
 
 ### Added

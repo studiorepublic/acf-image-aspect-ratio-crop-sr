@@ -202,6 +202,7 @@ import { sprintf } from 'sprintf-js';
         .off('click', '.js-acf-image-aspect-ratio-crop-reset')
         .on('click', '.js-acf-image-aspect-ratio-crop-reset', () => {
           this.cropper.reset();
+          this.resetFocalPoint();
         });
 
       $(document)
@@ -231,6 +232,8 @@ import { sprintf } from 'sprintf-js';
             y: cropData.y,
             width: cropData.width,
             height: cropData.height,
+            focalPointX: self.focalPoint.x,
+            focalPointY: self.focalPoint.y,
             temp_post_id: aiarc.temp_post_id,
             key: acfKey,
           };
@@ -591,7 +594,9 @@ import { sprintf } from 'sprintf-js';
         .data('original-image-id', null)
         .attr('data-original-image-id', null)
         .data('coordinates', null)
-        .attr('data-coordinates', null);
+        .attr('data-coordinates', null)
+        .data('focal-point', null)
+        .attr('data-focal-point', null);
 
       // vars
       var attachment = {};
@@ -621,6 +626,206 @@ import { sprintf } from 'sprintf-js';
       if (event.key === 'Escape') {
         this.closeModal();
       }
+    },
+
+    getDefaultFocalPoint: function() {
+      return { x: 50, y: 50 };
+    },
+
+    normalizeFocalPoint: function(x, y) {
+      const clamp = value => {
+        const num = parseFloat(value);
+        if (Number.isNaN(num)) {
+          return 50;
+        }
+        return Math.min(100, Math.max(0, Math.round(num * 10) / 10));
+      };
+      return {
+        x: clamp(x),
+        y: clamp(y),
+      };
+    },
+
+    loadFocalPointFromField: function() {
+      const $uploader = $(field).find('.acf-image-uploader-aspect-ratio-crop');
+      let focal = $uploader.data('focal-point');
+
+      if (!focal) {
+        const attr = $uploader.attr('data-focal-point');
+        if (attr) {
+          try {
+            focal = JSON.parse(attr);
+          } catch (e) {
+            focal = null;
+          }
+        }
+      }
+
+      if (!focal) {
+        const inputVal = $(field)
+          .find('input')
+          .first()
+          .val();
+        if (inputVal && inputVal.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(inputVal);
+            focal = parsed.crop && parsed.crop.focal_point;
+          } catch (e) {
+            focal = null;
+          }
+        }
+      }
+
+      if (focal && typeof focal.x !== 'undefined' && typeof focal.y !== 'undefined') {
+        return this.normalizeFocalPoint(focal.x, focal.y);
+      }
+
+      return this.getDefaultFocalPoint();
+    },
+
+    initFocalPoint: function() {
+      this.destroyFocalPoint();
+      this.focalPoint = this.loadFocalPointFromField();
+      this.focalPointSize = 16;
+
+      const label =
+        (window.aiarc_translations && window.aiarc_translations.focal_point_label) ||
+        'Drag to set focal point';
+
+      this.$focalPoint = $(
+        `<button type="button" class="acf-image-aspect-ratio-crop-focal-point js-acf-image-aspect-ratio-crop-focal-point" aria-label="${label}" title="${label}"></button>`,
+      );
+
+      const cropBox = this.cropper.cropper.querySelector('.cropper-crop-box');
+      if (!cropBox) {
+        return;
+      }
+      cropBox.appendChild(this.$focalPoint[0]);
+
+      this.focalDragBound = false;
+      this.isFocalDragging = false;
+      this.bindFocalPointEvents();
+      this.positionFocalPoint();
+
+      const $image = $('.js-acf-image-aspect-ratio-crop-modal-image');
+      $image.on(
+        'ready.aiarcFocal crop.aiarcFocal cropmove.aiarcFocal cropend.aiarcFocal zoom.aiarcFocal',
+        () => {
+          if (!this.isFocalDragging) {
+            this.positionFocalPoint();
+          }
+        },
+      );
+    },
+
+    destroyFocalPoint: function() {
+      if (this.$focalPoint && this.$focalPoint[0]) {
+        this.$focalPoint[0].removeEventListener(
+          'pointerdown',
+          this.focalPointerDownBound,
+        );
+      }
+      this.focalPointerDownBound = null;
+      this.focalDragBound = false;
+      this.isFocalDragging = false;
+      $('.js-acf-image-aspect-ratio-crop-modal-image').off('.aiarcFocal');
+      if (this.$focalPoint) {
+        this.$focalPoint.remove();
+        this.$focalPoint = null;
+      }
+    },
+
+    bindFocalPointEvents: function() {
+      if (!this.$focalPoint || this.focalDragBound) {
+        return;
+      }
+
+      this.focalDragBound = true;
+      const self = this;
+      const el = this.$focalPoint[0];
+
+      this.focalPointerDownBound = function(event) {
+        if (event.button !== 0 && event.pointerType === 'mouse') {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+
+        self.isFocalDragging = true;
+        if (el.setPointerCapture && event.pointerId !== undefined) {
+          el.setPointerCapture(event.pointerId);
+        }
+
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const startFocal = { x: self.focalPoint.x, y: self.focalPoint.y };
+
+        const onMove = moveEvent => {
+          moveEvent.preventDefault();
+          moveEvent.stopPropagation();
+
+          const box = self.cropper.getCropBoxData();
+          if (!box || box.width <= 0 || box.height <= 0) {
+            return;
+          }
+
+          const deltaX = ((moveEvent.clientX - startX) / box.width) * 100;
+          const deltaY = ((moveEvent.clientY - startY) / box.height) * 100;
+          self.focalPoint = self.normalizeFocalPoint(
+            startFocal.x + deltaX,
+            startFocal.y + deltaY,
+          );
+          self.positionFocalPoint();
+        };
+
+        const onEnd = endEvent => {
+          self.isFocalDragging = false;
+          if (el.releasePointerCapture && endEvent.pointerId !== undefined) {
+            try {
+              el.releasePointerCapture(endEvent.pointerId);
+            } catch (e) {
+              // Pointer may already be released.
+            }
+          }
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onEnd);
+          document.removeEventListener('pointercancel', onEnd);
+        };
+
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onEnd);
+        document.addEventListener('pointercancel', onEnd);
+      };
+
+      el.addEventListener('pointerdown', this.focalPointerDownBound);
+    },
+
+    positionFocalPoint: function() {
+      if (!this.cropper || !this.$focalPoint) {
+        return;
+      }
+
+      const box = this.cropper.getCropBoxData();
+      if (!box || box.width <= 0 || box.height <= 0) {
+        return;
+      }
+
+      const half = this.focalPointSize / 2;
+      const cx = (this.focalPoint.x / 100) * box.width;
+      const cy = (this.focalPoint.y / 100) * box.height;
+
+      this.$focalPoint.css({
+        left: cx - half,
+        top: cy - half,
+        zIndex: 2,
+      });
+    },
+
+    resetFocalPoint: function() {
+      this.focalPoint = this.getDefaultFocalPoint();
+      this.positionFocalPoint();
     },
 
     openModal: function(data) {
@@ -705,7 +910,7 @@ import { sprintf } from 'sprintf-js';
           class="acf-image-aspect-ratio-crop-modal-heading-close js-acf-image-aspect-ratio-crop-cancel"
           aria-label="Close"
         >
-          ${require('!raw-loader!./close.svg')}
+          ${require('./close.svg?raw')}
         </button>
       </div>
       <div class="acf-image-aspect-ratio-crop-modal-image-container">
@@ -723,7 +928,7 @@ import { sprintf } from 'sprintf-js';
           <button
             class="aiarc-button aiarc-button-link acf-image-aspect-ratio-crop-reset js-acf-image-aspect-ratio-crop-reset"
           >
-            ${require('!raw-loader!./reset.svg')}
+            ${require('./reset.svg?raw')}
             ${aiarc_translations.reset}
           </button>
           <button class="aiarc-button aiarc-button-default js-acf-image-aspect-ratio-crop-cancel">
@@ -745,21 +950,33 @@ import { sprintf } from 'sprintf-js';
 </div>
 `);
 
-      this.cropper = new Cropper(
-        $('.js-acf-image-aspect-ratio-crop-modal-image')[0],
-        options,
-      );
+      const cropperImage = $('.js-acf-image-aspect-ratio-crop-modal-image')[0];
+      const self = this;
+      const existingReady = options.ready;
+
+      options.ready = function() {
+        if (typeof existingReady === 'function') {
+          existingReady.call(this);
+        }
+        self.initFocalPoint();
+      };
+
+      this.cropper = new Cropper(cropperImage, options);
 
       // Test helper
       window._acf_image_aspect_ratio_cropper = this.cropper;
     },
 
     cropComplete: function(data) {
+      const focalJson = JSON.stringify(this.focalPoint || this.getDefaultFocalPoint());
+
       // Save coordinates so they are remembered even without saving the post first
       $(field)
         .find('.acf-image-uploader-aspect-ratio-crop')
         .data('coordinates', this.cropper.getData(true))
-        .attr('data-coordinates', JSON.stringify(this.cropper.getData(true)));
+        .attr('data-coordinates', JSON.stringify(this.cropper.getData(true)))
+        .data('focal-point', this.focalPoint)
+        .attr('data-focal-point', focalJson);
 
       // Cropping successful - data is { attachment_id, original_url, crop, aspect_ratio }
       this.cropper.destroy();
@@ -799,7 +1016,10 @@ import { sprintf } from 'sprintf-js';
       }
       $('.acf-image-aspect-ratio-crop-backdrop').remove();
       document.removeEventListener('keydown', this.escapeHandlerBound);
-      this.cropper.destroy();
+      this.destroyFocalPoint();
+      if (this.cropper) {
+        this.cropper.destroy();
+      }
     },
   });
 
