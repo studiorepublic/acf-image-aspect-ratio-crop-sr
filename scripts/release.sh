@@ -51,7 +51,7 @@ if [[ -f CHANGELOG.md ]]; then
   git add CHANGELOG.md
 fi
 
-git add acf-image-aspect-ratio-crop.php readme.txt
+git add acf-image-aspect-ratio-crop-sr.php readme.txt
 git commit -m "v$VERSION: Release"
 git tag -a "v$VERSION" -m "Release $VERSION"
 git push origin master
