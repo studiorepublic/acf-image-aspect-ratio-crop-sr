@@ -98,6 +98,8 @@ Requires [Image Resizing](https://developers.cloudflare.com/images/transform-ima
 
 ## Timber usage
 
+`|aiarc_crop` and `aiarc_crop_url()` accept **AIARC crop metadata**, a standard **ACF image** array, an **attachment ID**, an image **URL string**, or a **Timber image** object. Non-cropped values return the image URL (optionally scaled to max width/height).
+
 ```twig
 {% set hero = post.hero_image %}
 {% if hero %}
@@ -105,14 +107,19 @@ Requires [Image Resizing](https://developers.cloudflare.com/images/transform-ima
   {# Responsive: max 800px wide #}
   <img src="{{ hero|aiarc_crop(800) }}" alt="{{ post.title }}" />
 {% endif %}
+
+{# Same filter works for a standard ACF image field on another post #}
+<img src="{{ post.thumbnail|aiarc_crop(400) }}" alt="">
 ```
 
 ```php
 $hero = get_field('hero_image');
-if ($hero && !empty($hero['crop'])) {
-    $url = aiarc_crop_url($hero);
-    $responsive_url = aiarc_crop_url($hero, 800);
-}
+$url = aiarc_crop_url($hero);
+$responsive_url = aiarc_crop_url($hero, 800);
+
+// Attachment ID or URL also work
+$url = aiarc_crop_url(123, 800);
+$url = aiarc_crop_url('https://example.com/photo.jpg', 1200);
 ```
 
 ## Upgrading from the original plugin

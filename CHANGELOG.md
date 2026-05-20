@@ -4,6 +4,10 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`aiarc_crop_url()` / `|aiarc_crop`** — Accept standard ACF image arrays, attachment IDs, URL strings, and Timber image objects; returns the image URL (with optional scaling) when the value is not crop metadata.
+
 ## [1.1.3] - 2026-05-20
 
 ### Fixed

@@ -64,8 +64,9 @@ Non-Cloudflare sites: use `crop.focal_point` with CSS `object-position: {x}% {y}
 
 ## Timber Usage
 
-- `aiarc_crop_url($crop_data, $max_width, $max_height)` — PHP helper
-- `{{ hero_image|aiarc_crop }}` or `{{ hero_image|aiarc_crop(800) }}` — Twig filter (when Timber active)
+- `aiarc_crop_url($image, $max_width, $max_height)` — PHP helper; accepts crop metadata, ACF image array, attachment ID, URL, or Timber image
+- `aiarc_is_crop_data($value)` — True when value is AIARC crop metadata (not a standard ACF image array)
+- `{{ hero_image|aiarc_crop }}` or `{{ hero_image|aiarc_crop(800) }}` — Twig filter (when Timber active); same input types as `aiarc_crop_url`
 
 ## Conventions
 

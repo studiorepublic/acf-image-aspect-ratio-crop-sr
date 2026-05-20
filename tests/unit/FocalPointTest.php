@@ -16,7 +16,7 @@ class FocalPointTest extends \Codeception\Test\Unit
             define('AIARC_UNIT_TEST', true);
         }
         if (!function_exists('aiarc_normalize_focal_point')) {
-            require_once dirname(__DIR__, 2) . '/acf-image-aspect-ratio-crop.php';
+            require_once dirname(__DIR__, 2) . '/acf-image-aspect-ratio-crop-sr.php';
         }
     }
 
@@ -71,5 +71,25 @@ class FocalPointTest extends \Codeception\Test\Unit
         $this->assertStringContainsString('gravity=0.250x0.750', $url);
         $this->assertStringContainsString('fit=cover', $url);
         $this->assertStringContainsString('trim.left=10', $url);
+    }
+
+    public function testIsCropDataRecognizesMetadata()
+    {
+        $this->assertTrue(
+            aiarc_is_crop_data([
+                'attachment_id' => 1,
+                'crop' => ['x' => 0, 'y' => 0, 'width' => 100, 'height' => 50],
+            ])
+        );
+    }
+
+    public function testIsCropDataRejectsStandardAcfImageArray()
+    {
+        $this->assertFalse(
+            aiarc_is_crop_data([
+                'ID' => 1,
+                'url' => 'https://example.com/photo.jpg',
+            ])
+        );
     }
 }
