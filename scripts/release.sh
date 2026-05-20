@@ -57,4 +57,4 @@ git tag -a "v$VERSION" -m "Release $VERSION"
 git push origin master
 git push origin "v$VERSION"
 
-echo "Done. Release workflow: https://github.com/studiorepublic/acf-image-aspect-ratio-crop/actions"
+echo "Done. Release workflow: https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr/actions"

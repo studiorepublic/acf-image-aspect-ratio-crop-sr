@@ -3,7 +3,7 @@
 # Build a self-contained plugin zip including vendor/ and built assets for GitHub release.
 # Run from the plugin root: ./scripts/build-release.sh [version]
 #
-# The zip is placed in dist/ and named acf-image-aspect-ratio-crop.zip
+# The zip is placed in dist/ and named acf-image-aspect-ratio-crop-sr.zip
 # so that it can be attached to a GitHub release. Plugin Update Checker
 # will use this asset (enableReleaseAssets with /\.zip$/) instead of the
 # auto-generated source zip (which excludes vendor and may miss built assets).
@@ -34,6 +34,17 @@ if [[ -f package.json ]]; then
   npm run build
 fi
 
+REQUIRED_ASSETS=(
+  "assets/dist/input-script.js"
+  "assets/dist/input-style.css"
+)
+for asset in "${REQUIRED_ASSETS[@]}"; do
+  if [[ ! -f "$PLUGIN_DIR/$asset" ]]; then
+    echo "Error: missing built asset: $asset (run npm run build)" >&2
+    exit 1
+  fi
+done
+
 # Ensure vendor is present (production deps only)
 if [[ ! -d vendor ]] || [[ vendor/autoload.php -ot composer.json ]]; then
   echo "Running composer install --no-dev..."
@@ -46,7 +57,7 @@ rsync -a \
   --exclude='.git' \
   --exclude='.gitignore' \
   --exclude='build' \
-  --exclude='dist' \
+  --exclude='/dist' \
   --exclude='.DS_Store' \
   --exclude='*.log' \
   --exclude='node_modules' \

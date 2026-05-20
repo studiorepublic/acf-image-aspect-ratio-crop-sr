@@ -507,6 +507,28 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
      *  @return    n/a
      */
 
+    /**
+     * Cache-busting version for a built asset file.
+     *
+     * @param string $relative_path Path relative to plugin root (e.g. assets/dist/input-script.js).
+     * @return string Plugin version or file hash when WP_DEBUG and the file exists.
+     */
+    private function get_asset_version($relative_path)
+    {
+        $version = $this->settings['version'];
+        if (!WP_DEBUG) {
+            return $version;
+        }
+
+        $file = $this->settings['path'] . '/' . ltrim($relative_path, '/');
+        if (!is_readable($file)) {
+            return $version;
+        }
+
+        $hash = @md5_file($file);
+        return $hash !== false ? $hash : $version;
+    }
+
     function input_admin_enqueue_scripts()
     {
         global $post;
@@ -517,11 +539,7 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
             'acf-image-aspect-ratio-crop',
             "{$url}assets/dist/input-script.js",
             ['acf-input', 'backbone'],
-            WP_DEBUG
-                ? md5_file(
-                    $this->settings['path'] . '/assets/dist/input-script.js'
-                )
-                : $version
+            $this->get_asset_version('assets/dist/input-script.js')
         );
         $translation_array = [
             'cropping_in_progress' => __(
@@ -581,11 +599,7 @@ class npx_acf_field_image_aspect_ratio_crop extends acf_field
             'acf-image-aspect-ratio-crop',
             "{$url}assets/dist/input-style.css",
             ['acf-input'],
-            WP_DEBUG
-                ? md5_file(
-                    $this->settings['path'] . '/assets/dist/input-style.css'
-                )
-                : $version
+            $this->get_asset_version('assets/dist/input-style.css')
         );
         wp_enqueue_style('acf-image-aspect-ratio-crop');
     }

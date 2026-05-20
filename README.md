@@ -221,6 +221,8 @@ Rolling back to the original plugin after metadata is saved is **not supported**
 ## Download
 
 - **This fork:** [GitHub releases — studiorepublic/acf-image-aspect-ratio-crop-sr](https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr/releases)
+  - Install **`acf-image-aspect-ratio-crop-sr.zip`** from the release assets (built JS/CSS included).
+  - Do **not** use the auto-generated “Source code” archive — it has no `assets/dist/` files.
 - **Original:** [WordPress plugin directory](https://wordpress.org/plugins/acf-image-aspect-ratio-crop/) or [joppuyo/acf-image-aspect-ratio-crop](https://github.com/joppuyo/acf-image-aspect-ratio-crop/releases)
 
 ## Requirements

@@ -27,7 +27,7 @@ The `main` branch is protected. All updates must go through pull requests. Creat
 3. Script bumps version in `acf-image-aspect-ratio-crop.php` and `readme.txt`, commits, tags, and pushes
 4. GitHub Action (`.github/workflows/release.yml`) builds the zip and creates the release on tag push
 
-Manual build: `./scripts/build-release.sh [version]` — output in `dist/acf-image-aspect-ratio-crop.zip`
+Manual build: `./scripts/build-release.sh [version]` — output in `dist/acf-image-aspect-ratio-crop-sr.zip`. Runs `npm run build` and includes `assets/dist/` in the zip (rsync must use `--exclude='/dist'` only for the plugin `dist/` folder, not `assets/dist`).
 
 ## Key Files
 
