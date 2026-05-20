@@ -4,7 +4,7 @@
 Plugin Name: Advanced Custom Fields: Image Aspect Ratio Crop (sr)
 Plugin URI: https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr
 Description: ACF field that allows user to crop image to a specific aspect ratio or pixel size
-Version: 1.1.3
+Version: 1.1.4
 Author: Studio Republic - Based on the work of Johannes Siipola
 Author URI: https://www.studiorepublic.com
 License: GPLv2 or later
@@ -23,6 +23,149 @@ if (!defined('ABSPATH')) {
 }
 
 define('AIARC_PLUGIN_FILE', __FILE__);
+
+/**
+ * REST endpoint URLs for admin JS (uses rest_url for correct prefix/permalinks).
+ *
+ * @return array{upload: string, crop: string, get: string, preview: string}
+ */
+function aiarc_get_rest_endpoint_urls()
+{
+    return [
+        'upload' => rest_url('aiarc/v1/upload'),
+        'crop' => rest_url('aiarc/v1/crop'),
+        'get' => rest_url('aiarc/v1/get'),
+        'preview' => rest_url('aiarc/v1/preview'),
+    ];
+}
+
+/**
+ * Append a debug log line for the active agent session (debug mode only).
+ *
+ * @param string $location
+ * @param string $message
+ * @param array  $data
+ * @param string $hypothesisId
+ */
+function aiarc_debug_log($location, $message, $data = [], $hypothesisId = '')
+{
+    $log_path = dirname(AIARC_PLUGIN_FILE) . '/.cursor/debug-7d3f1f.log';
+    // #region agent log
+    file_put_contents(
+        $log_path,
+        wp_json_encode(
+            [
+                'sessionId' => '7d3f1f',
+                'hypothesisId' => $hypothesisId,
+                'location' => $location,
+                'message' => $message,
+                'data' => $data,
+                'timestamp' => (int) round(microtime(true) * 1000),
+            ]
+        ) . "\n",
+        FILE_APPEND | LOCK_EX
+    );
+    // #endregion
+}
+
+/**
+ * Admin AJAX URL for crop preview images (avoids REST cookie auth on <img src>).
+ *
+ * @return string
+ */
+function aiarc_get_preview_ajax_base_url()
+{
+    return add_query_arg('action', 'aiarc_preview', admin_url('admin-ajax.php'));
+}
+
+/**
+ * Generate cropped preview image bytes for admin display.
+ *
+ * @param int $id Attachment ID.
+ * @param int $x Crop X.
+ * @param int $y Crop Y.
+ * @param int $w Crop width.
+ * @param int $h Crop height.
+ * @return array{mime: string, body: string}|WP_Error
+ */
+function aiarc_generate_preview_image($id, $x, $y, $w, $h)
+{
+    if ($id <= 0 || $w <= 0 || $h <= 0) {
+        return new WP_Error(
+            'invalid_crop_dimensions',
+            __('Invalid crop dimensions.', 'acf-image-aspect-ratio-crop'),
+            ['status' => 400]
+        );
+    }
+
+    $image_data = wp_get_attachment_metadata($id);
+    if (!$image_data || empty($image_data['file'])) {
+        return new WP_Error(
+            'invalid_attachment',
+            __('Attachment not found.', 'acf-image-aspect-ratio-crop'),
+            ['status' => 404]
+        );
+    }
+
+    $upload_dir = wp_upload_dir();
+    $file_path = $upload_dir['basedir'] . '/' . $image_data['file'];
+    if (!file_exists($file_path)) {
+        return new WP_Error(
+            'file_not_found',
+            __('Image file not found.', 'acf-image-aspect-ratio-crop'),
+            ['status' => 404]
+        );
+    }
+
+    $image = wp_get_image_editor($file_path);
+    if (is_wp_error($image)) {
+        return $image;
+    }
+
+    $image->crop($x, $y, $w, $h);
+
+    $max_width = 800;
+    $size = $image->get_size();
+    if ($size && $size['width'] > $max_width) {
+        $ratio = $max_width / $size['width'];
+        $image->resize($max_width, (int) round($size['height'] * $ratio), false);
+    }
+
+    $ext = pathinfo($image_data['file'], PATHINFO_EXTENSION);
+    $mime = 'image/' . (($ext === 'png') ? 'png' : (($ext === 'gif') ? 'gif' : 'jpeg'));
+
+    ob_start();
+    $stream_result = $image->stream($mime);
+    $body = ob_get_clean();
+
+    if (is_wp_error($stream_result) || empty($body)) {
+        return new WP_Error(
+            'stream_failed',
+            __('Failed to generate preview.', 'acf-image-aspect-ratio-crop'),
+            ['status' => 500]
+        );
+    }
+
+    return ['mime' => $mime, 'body' => $body];
+}
+
+/**
+ * Send preview image HTTP response and exit.
+ *
+ * @param array{mime: string, body: string} $preview
+ */
+function aiarc_send_preview_image_response($preview)
+{
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
+    status_header(200);
+    header('Content-Type: ' . $preview['mime']);
+    header('Cache-Control: public, max-age=3600');
+    echo $preview['body']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- binary image
+    exit();
+}
 
 /**
  * Check if the current request is proxied through Cloudflare.
@@ -241,9 +384,9 @@ function aiarc_get_preview_url($crop_data)
             'y' => (int) $c['y'],
             'w' => (int) $c['width'],
             'h' => (int) $c['height'],
-            '_wpnonce' => wp_create_nonce('wp_rest'),
+            '_wpnonce' => wp_create_nonce('aiarc_preview'),
         ],
-        rest_url('aiarc/v1/preview')
+        aiarc_get_preview_ajax_base_url()
     );
     return $url;
 }
@@ -644,6 +787,8 @@ class npx_acf_plugin_image_aspect_ratio_crop
         add_action('rest_api_init', [$this, 'rest_api_init']);
 
         // No acf/save_post handler: we store crop metadata only, no cropped image attachments.
+
+        add_action('wp_ajax_aiarc_preview', [$this, 'ajax_preview_handler']);
 
         add_action('wp_ajax_acf_image_aspect_ratio_crop_crop', function () {
             // WTF WordPress
@@ -1413,6 +1558,61 @@ class npx_acf_plugin_image_aspect_ratio_crop
     }
 
     /**
+     * Admin AJAX: serve cropped preview for <img src> (no REST cookie auth).
+     */
+    public function ajax_preview_handler()
+    {
+        $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+        $x = isset($_GET['x']) ? (int) $_GET['x'] : 0;
+        $y = isset($_GET['y']) ? (int) $_GET['y'] : 0;
+        $w = isset($_GET['w']) ? (int) $_GET['w'] : 0;
+        $h = isset($_GET['h']) ? (int) $_GET['h'] : 0;
+
+        aiarc_debug_log(
+            'acf-image-aspect-ratio-crop-sr.php:ajax_preview_handler',
+            'ajax preview request',
+            [
+                'id' => $id,
+                'w' => $w,
+                'h' => $h,
+                'can_upload' => current_user_can('upload_files'),
+                'nonce_ok' => isset($_GET['_wpnonce'])
+                    && wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'])), 'aiarc_preview'),
+            ],
+            'H2'
+        );
+
+        if (!current_user_can('upload_files')) {
+            status_header(403);
+            exit();
+        }
+
+        check_ajax_referer('aiarc_preview', '_wpnonce');
+
+        $preview = aiarc_generate_preview_image($id, $x, $y, $w, $h);
+        if (is_wp_error($preview)) {
+            $status = $preview->get_error_data()['status'] ?? 500;
+            aiarc_debug_log(
+                'acf-image-aspect-ratio-crop-sr.php:ajax_preview_handler',
+                'ajax preview error',
+                ['code' => $preview->get_error_code(), 'status' => $status],
+                'H5'
+            );
+            status_header((int) $status);
+            exit();
+        }
+
+        aiarc_debug_log(
+            'acf-image-aspect-ratio-crop-sr.php:ajax_preview_handler',
+            'ajax preview success',
+            ['mime' => $preview['mime'], 'bytes' => strlen($preview['body'])],
+            'H5'
+        );
+
+        aiarc_send_preview_image_response($preview);
+    }
+
+    /**
      * REST callback: output cropped image for admin preview (no file save).
      *
      * @param WP_REST_Request $request
@@ -1426,57 +1626,20 @@ class npx_acf_plugin_image_aspect_ratio_crop
         $w = (int) $request->get_param('w');
         $h = (int) $request->get_param('h');
 
-        $image_data = wp_get_attachment_metadata($id);
-        if (!$image_data || empty($image_data['file'])) {
-            return new WP_Error(
-                'invalid_attachment',
-                __('Attachment not found.', 'acf-image-aspect-ratio-crop'),
-                ['status' => 404]
-            );
+        aiarc_debug_log(
+            'acf-image-aspect-ratio-crop-sr.php:rest_api_preview_callback',
+            'rest preview request',
+            ['id' => $id, 'w' => $w, 'h' => $h, 'logged_in' => is_user_logged_in()],
+            'H2'
+        );
+
+        $preview = aiarc_generate_preview_image($id, $x, $y, $w, $h);
+        if (is_wp_error($preview)) {
+            return $preview;
         }
 
-        $upload_dir = wp_upload_dir();
-        $file_path = $upload_dir['basedir'] . '/' . $image_data['file'];
-        if (!file_exists($file_path)) {
-            return new WP_Error(
-                'file_not_found',
-                __('Image file not found.', 'acf-image-aspect-ratio-crop'),
-                ['status' => 404]
-            );
-        }
-
-        $image = wp_get_image_editor($file_path);
-        if (is_wp_error($image)) {
-            return $image;
-        }
-
-        $crop_data = ['x' => $x, 'y' => $y, 'width' => $w, 'height' => $h];
-        $this->crop($image, $crop_data);
-
-        $max_width = 800;
-        $size = $image->get_size();
-        if ($size && $size['width'] > $max_width) {
-            $ratio = $max_width / $size['width'];
-            $image->resize($max_width, (int) round($size['height'] * $ratio), false);
-        }
-
-        $ext = pathinfo($image_data['file'], PATHINFO_EXTENSION);
-        $mime = 'image/' . (($ext === 'png') ? 'png' : (($ext === 'gif') ? 'gif' : 'jpeg'));
-
-        ob_start();
-        $stream_result = $image->stream($mime);
-        $body = ob_get_clean();
-
-        if (is_wp_error($stream_result) || empty($body)) {
-            return new WP_Error(
-                'stream_failed',
-                __('Failed to generate preview.', 'acf-image-aspect-ratio-crop'),
-                ['status' => 500]
-            );
-        }
-
-        $response = new WP_REST_Response($body, 200);
-        $response->header('Content-Type', $mime);
+        $response = new WP_REST_Response($preview['body'], 200);
+        $response->header('Content-Type', $preview['mime']);
         $response->header('Cache-Control', 'public, max-age=3600');
         return $response;
     }

@@ -178,6 +178,57 @@ function aiarc_is_cloudflare_proxy()
 }
 
 /**
+ * Default output format for aiarc_crop_url() (Cloudflare and disk cache).
+ *
+ * @return string e.g. webp, avif, jpeg, png, auto.
+ */
+function aiarc_crop_output_format()
+{
+    $format = strtolower((string) apply_filters('aiarc_crop_output_format', 'webp'));
+    $allowed = ['webp', 'avif', 'jpeg', 'png', 'auto'];
+
+    return in_array($format, $allowed, true) ? $format : 'webp';
+}
+
+/**
+ * Default output quality for aiarc_crop_url() (1–100).
+ *
+ * @return int
+ */
+function aiarc_crop_output_quality()
+{
+    $quality = (int) apply_filters('aiarc_crop_output_quality', 90);
+
+    return max(1, min(100, $quality));
+}
+
+/**
+ * Cloudflare transform options for format and quality.
+ *
+ * @return string e.g. ",format=webp,quality=90".
+ */
+function aiarc_cloudflare_format_quality_suffix()
+{
+    return sprintf(
+        ',format=%s,quality=%d',
+        aiarc_crop_output_format(),
+        aiarc_crop_output_quality()
+    );
+}
+
+/**
+ * Whether Cloudflare Image Transform URLs should be used for this request.
+ *
+ * @return bool
+ */
+function aiarc_use_cloudflare_transforms()
+{
+    $settings = get_option('acf-image-aspect-ratio-crop-settings', []);
+
+    return !empty($settings['cloudflare_images']) && aiarc_is_cloudflare_proxy();
+}
+
+/**
  * Normalize focal point percentages (0–100, one decimal).
  *
  * @param mixed $x Horizontal percent from left of crop box.
@@ -246,6 +297,28 @@ function aiarc_get_focal_gravity($crop_data)
 }
 
 /**
+ * Inline style attribute for CSS object-position from crop focal point.
+ *
+ * @param mixed $crop_data AIARC crop metadata.
+ * @param bool  $enabled   When false, returns an empty string.
+ * @return string e.g. ' style="object-position: 25% 75%;"' or empty string.
+ */
+function aiarc_object_position_style($crop_data, $enabled = true)
+{
+    if (!$enabled || !aiarc_is_crop_data($crop_data)) {
+        return '';
+    }
+
+    $fp = aiarc_get_focal_point($crop_data);
+
+    return sprintf(
+        ' style="object-position: %s%% %s%%;"',
+        esc_attr((string) $fp['x']),
+        esc_attr((string) $fp['y'])
+    );
+}
+
+/**
  * Generate Cloudflare Image Transform URL for cropped image.
  *
  * @param array $crop_data Array with original_url and crop (x, y, width, height).
@@ -301,7 +374,7 @@ function aiarc_cloudflare_crop_url($crop_data, $max_width = 0, $max_height = 0)
         $options .= sprintf(',width=%d,height=%d,fit=scale-down', $dw, $dh);
     }
 
-    return '/cdn-cgi/image/' . $options . '/' . $source;
+    return '/cdn-cgi/image/' . $options . aiarc_cloudflare_format_quality_suffix() . '/' . $source;
 }
 
 /**
@@ -347,7 +420,33 @@ function aiarc_cloudflare_recrop_url($crop_data, $width, $height, $fit = 'cover'
         aiarc_get_focal_gravity($crop_data)
     );
 
-    return '/cdn-cgi/image/' . $options . '/' . $source;
+    return '/cdn-cgi/image/' . $options . aiarc_cloudflare_format_quality_suffix() . '/' . $source;
+}
+
+/**
+ * Save a WP image editor instance to the aiarc cache as WebP (or JPEG fallback).
+ *
+ * @param WP_Image_Editor $editor Image editor after crop/resize.
+ * @param string          $file_path Target file path including extension.
+ * @return array{path: string, type: string}|WP_Error
+ */
+function aiarc_save_crop_cache_file($editor, $file_path)
+{
+    $editor->set_quality(aiarc_crop_output_quality());
+
+    if (
+        aiarc_crop_output_format() === 'webp' &&
+        function_exists('wp_image_editor_supports') &&
+        wp_image_editor_supports(['mime_type' => 'image/webp'])
+    ) {
+        return $editor->save($file_path, 'image/webp');
+    }
+
+    if (preg_match('/\.jpe?g$/i', $file_path)) {
+        return $editor->save($file_path, 'image/jpeg');
+    }
+
+    return $editor->save($file_path);
 }
 
 /**
@@ -366,9 +465,7 @@ function aiarc_get_preview_url($crop_data)
         return '';
     }
 
-    $settings = get_option('acf-image-aspect-ratio-crop-settings', []);
-    $cloudflare_images = !empty($settings['cloudflare_images']);
-    if ($cloudflare_images && aiarc_is_cloudflare_proxy()) {
+    if (aiarc_use_cloudflare_transforms()) {
         $cf_url = aiarc_cloudflare_crop_url($crop_data, 0, 0);
         if ($cf_url !== '') {
             return $cf_url;
@@ -618,7 +715,8 @@ function aiarc_standard_image_url($image, $max_width = 0, $max_height = 0)
  *
  * @param mixed $image Crop metadata, attachment ID, URL, ACF image array, etc.
  * @param int   $max_width  Optional. Max width to scale down to (preserves aspect ratio).
- * @param int   $max_height Optional. Max height to scale down to.
+ * @param int   $max_height Optional. Max height to scale down to. When both are set and
+ *                          Cloudflare transforms are active, uses fit=cover with focal gravity.
  * @return string Image URL, or empty string when the value cannot be resolved.
  */
 function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
@@ -640,10 +738,14 @@ function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
         return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
     }
 
-    $settings = get_option('acf-image-aspect-ratio-crop-settings', []);
-    $cloudflare_images = !empty($settings['cloudflare_images']);
-    if ($cloudflare_images && aiarc_is_cloudflare_proxy()) {
-        $cf_url = aiarc_cloudflare_crop_url($crop_data, $max_width, $max_height);
+    if (aiarc_use_cloudflare_transforms()) {
+        $max_width = max(0, (int) $max_width);
+        $max_height = max(0, (int) $max_height);
+        if ($max_width > 0 && $max_height > 0) {
+            $cf_url = aiarc_cloudflare_recrop_url($crop_data, $max_width, $max_height);
+        } else {
+            $cf_url = aiarc_cloudflare_crop_url($crop_data, $max_width, $max_height);
+        }
         if ($cf_url !== '') {
             return $cf_url;
         }
@@ -658,7 +760,16 @@ function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
     $max_width = max(0, (int) $max_width);
     $max_height = max(0, (int) $max_height);
 
-    $cache_key = 'aiarc_' . md5($id . $x . $y . $w . $h . $max_width . $max_height);
+    $output_format = aiarc_crop_output_format();
+    $output_quality = aiarc_crop_output_quality();
+    $use_webp = $output_format === 'webp' &&
+        function_exists('wp_image_editor_supports') &&
+        wp_image_editor_supports(['mime_type' => 'image/webp']);
+    $cache_ext = $use_webp ? 'webp' : 'jpg';
+
+    $cache_key = 'aiarc_' . md5(
+        $id . $x . $y . $w . $h . $max_width . $max_height . $cache_ext . $output_quality
+    );
 
     $image_data = wp_get_attachment_metadata($id);
     if (!$image_data || empty($image_data['file'])) {
@@ -668,9 +779,7 @@ function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
     $upload_dir = wp_upload_dir();
     $base_dir = $upload_dir['basedir'] . '/aiarc-cache';
     $base_url = $upload_dir['baseurl'] . '/aiarc-cache';
-    $ext = pathinfo($image_data['file'], PATHINFO_EXTENSION);
-    $ext = ($ext === 'jpg' || $ext === 'jpeg') ? 'jpg' : (($ext === 'png') ? 'png' : 'gif');
-    $filename = $cache_key . '.' . $ext;
+    $filename = $cache_key . '.' . $cache_ext;
     $file_path = $base_dir . '/' . $filename;
 
     if (file_exists($file_path)) {
@@ -712,7 +821,7 @@ function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
         return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
     }
 
-    $saved = $image->save($file_path);
+    $saved = aiarc_save_crop_cache_file($image, $file_path);
     if (is_wp_error($saved)) {
         return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
     }
@@ -1054,6 +1163,11 @@ class npx_acf_plugin_image_aspect_ratio_crop
         $filters['aiarc_crop'] = [
             'callable' => function ($image, $max_width = 0, $max_height = 0) {
                 return aiarc_crop_url($image, (int) $max_width, (int) $max_height);
+            },
+        ];
+        $filters['aiarc_object_position_style'] = [
+            'callable' => function ($image, $enabled = true) {
+                return aiarc_object_position_style($image, (bool) $enabled);
             },
         ];
         return $filters;

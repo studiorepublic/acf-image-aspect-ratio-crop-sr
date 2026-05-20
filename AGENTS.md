@@ -58,15 +58,17 @@ The field stores an array (no cropped image file):
 
 ## Cloudflare Images
 
-When "Use Cloudflare Image Transformations" is enabled in settings, `aiarc_crop_url` and `aiarc_get_preview_url` return Cloudflare `/cdn-cgi/image/` URLs. Requires site behind Cloudflare proxy (detected via `CF-Ray`/`CF-Connecting-IP` headers). `aiarc_cloudflare_crop_url()` builds the trim URL; `aiarc_cloudflare_recrop_url($crop_data, $width, $height)` trims then resizes with `fit=cover` and `gravity` from focal point; `aiarc_is_cloudflare_proxy()` checks request headers.
+When "Use Cloudflare Image Transformations" is enabled, `aiarc_use_cloudflare_transforms()` (settings + `CF-Ray`/`CF-Connecting-IP`) gates Cloudflare URLs. `aiarc_crop_url()` calls `aiarc_cloudflare_recrop_url()` when both max width and height are set (focal via `gravity`), otherwise `aiarc_cloudflare_crop_url()` (trim + optional `scale-down`). `aiarc_get_preview_url` uses the same gate for admin preview.
 
 Non-Cloudflare sites: use `crop.focal_point` with CSS `object-position: {x}% {y}%` and `object-fit: cover`.
 
 ## Timber Usage
 
 - `aiarc_crop_url($image, $max_width, $max_height)` — PHP helper; accepts crop metadata, ACF image array, attachment ID, URL, or Timber image
+- `aiarc_object_position_style($crop_data, $enabled)` — Inline `style="object-position: …"` attribute from focal point; empty when disabled or not crop data
 - `aiarc_is_crop_data($value)` — True when value is AIARC crop metadata (not a standard ACF image array)
 - `{{ hero_image|aiarc_crop }}` or `{{ hero_image|aiarc_crop(800) }}` — Twig filter (when Timber active); same input types as `aiarc_crop_url`
+- `{{ hero_image|aiarc_object_position_style(true) }}` — Twig filter for object-position style attribute
 
 ## Conventions
 

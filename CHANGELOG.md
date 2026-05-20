@@ -4,6 +4,15 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`aiarc_object_position_style()`** / **`|aiarc_object_position_style`** — Returns an inline `style="object-position: …"` attribute from crop focal metadata (empty when disabled or value is not crop data).
+- **`aiarc_crop_url()` WebP output** — Cropped URLs default to WebP at 90% quality (Cloudflare `format=webp,quality=90` and disk cache). Override with `aiarc_crop_output_format` and `aiarc_crop_output_quality` filters.
+
+### Changed
+
+- **`aiarc_crop_url()`** — When Cloudflare Image Transformations are enabled and the request is behind the proxy, uses `aiarc_cloudflare_recrop_url()` (trim + `fit=cover` + focal gravity) when both max width and height are passed; otherwise uses `aiarc_cloudflare_crop_url()`. Added `aiarc_use_cloudflare_transforms()` for the shared settings/proxy check.
+
 ## [1.1.5] - 2026-05-20
 
 ## [1.1.4] - 2026-05-20

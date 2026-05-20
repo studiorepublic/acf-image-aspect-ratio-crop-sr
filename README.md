@@ -76,22 +76,19 @@ Use the original image URL with `object-fit: cover` and focal percentages as `ob
 
 ```php
 $hero = get_field('hero_image');
-if ($hero && !empty($hero['crop'])) {
-    $fp = aiarc_get_focal_point($hero);
-    printf(
-        'object-position: %s%% %s%%;',
-        esc_attr($fp['x']),
-        esc_attr($fp['y'])
-    );
-}
+echo aiarc_object_position_style($hero, true); // style="object-position: 50% 50%;"
+```
+
+```twig
+<img src="{{ hero|aiarc_crop(800) }}" alt=""{{ hero|aiarc_object_position_style(object_position) }} />
 ```
 
 ### Cloudflare Image Transformations
 
 When **Use Cloudflare Image Transformations** is enabled (Settings → ACF Image Aspect Ratio Crop) and the site is behind the Cloudflare proxy:
 
-- `aiarc_crop_url()` / `|aiarc_crop` — trim to the stored crop (and optional max dimensions).
-- `aiarc_cloudflare_recrop_url($hero, $width, $height)` — trim to the stored crop, then resize/crop to another size using `fit=cover` and **gravity** from the focal point.
+- `aiarc_crop_url()` / `|aiarc_crop` — trim to the stored crop (and optional max dimensions). Outputs **WebP at 90% quality** by default (`format=webp,quality=90` on Cloudflare; WebP files in `uploads/aiarc-cache/`). Filters: `aiarc_crop_output_format`, `aiarc_crop_output_quality`. With Cloudflare enabled, both max width and height use `fit=cover` and focal **gravity** automatically.
+- `aiarc_cloudflare_recrop_url($hero, $width, $height)` — same recrop URL builder used internally by `aiarc_crop_url()` when both dimensions are passed.
 - `aiarc_get_focal_gravity($hero)` — returns a Cloudflare gravity string (e.g. `0.5x0.5` for center).
 
 Requires [Image Resizing](https://developers.cloudflare.com/images/transform-images/) on your Cloudflare zone.

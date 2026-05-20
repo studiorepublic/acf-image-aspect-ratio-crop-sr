@@ -15,6 +15,12 @@ class FocalPointTest extends \Codeception\Test\Unit
         if (!defined('AIARC_UNIT_TEST')) {
             define('AIARC_UNIT_TEST', true);
         }
+        if (!function_exists('esc_attr')) {
+            function esc_attr($text)
+            {
+                return (string) $text;
+            }
+        }
         if (!function_exists('aiarc_normalize_focal_point')) {
             require_once dirname(__DIR__, 2) . '/acf-image-aspect-ratio-crop-sr.php';
         }
@@ -54,6 +60,36 @@ class FocalPointTest extends \Codeception\Test\Unit
         $this->assertSame(50.0, $fp['y']);
     }
 
+    public function testObjectPositionStyleOutputsAttribute()
+    {
+        $crop_data = [
+            'attachment_id' => 1,
+            'crop' => [
+                'x' => 0,
+                'y' => 0,
+                'width' => 100,
+                'height' => 50,
+                'focal_point' => ['x' => 25, 'y' => 75],
+            ],
+        ];
+
+        $this->assertSame(
+            ' style="object-position: 25% 75%;"',
+            aiarc_object_position_style($crop_data)
+        );
+    }
+
+    public function testObjectPositionStyleEmptyWhenDisabledOrNotCropData()
+    {
+        $crop_data = [
+            'attachment_id' => 1,
+            'crop' => ['x' => 0, 'y' => 0, 'width' => 100, 'height' => 50],
+        ];
+
+        $this->assertSame('', aiarc_object_position_style($crop_data, false));
+        $this->assertSame('', aiarc_object_position_style(['ID' => 1, 'url' => 'https://example.com/a.jpg']));
+    }
+
     public function testCloudflareRecropUrlIncludesGravity()
     {
         $crop_data = [
@@ -71,6 +107,8 @@ class FocalPointTest extends \Codeception\Test\Unit
         $this->assertStringContainsString('gravity=0.250x0.750', $url);
         $this->assertStringContainsString('fit=cover', $url);
         $this->assertStringContainsString('trim.left=10', $url);
+        $this->assertStringContainsString('format=webp', $url);
+        $this->assertStringContainsString('quality=90', $url);
     }
 
     public function testIsCropDataRecognizesMetadata()
