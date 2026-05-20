@@ -4,6 +4,8 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-20
+
 ### Added
 
 - **Focal point** — Draggable marker inside the crop box (default center). Saved as `crop.focal_point` percentages (0–100) relative to the crop rectangle.
