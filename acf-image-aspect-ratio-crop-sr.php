@@ -198,6 +198,128 @@ function aiarc_plugin_settings()
 }
 
 /**
+ * Enable debug session logging for admins (?aiarc_debug=65609e).
+ */
+function aiarc_maybe_enable_debug_session()
+{
+    if (
+        defined('AIARC_DEBUG_SESSION') ||
+        !isset($_GET['aiarc_debug']) ||
+        $_GET['aiarc_debug'] !== '65609e' ||
+        !function_exists('current_user_can') ||
+        !current_user_can('manage_options')
+    ) {
+        return;
+    }
+
+    define('AIARC_DEBUG_SESSION', '65609e');
+}
+
+add_action('init', 'aiarc_maybe_enable_debug_session', 1);
+
+/**
+ * Append NDJSON debug log (session 65609e only).
+ *
+ * @param string               $location     File:function.
+ * @param string               $message      Short description.
+ * @param array<string, mixed> $data         Context.
+ * @param string               $hypothesisId Hypothesis id.
+ * @param string               $runId        Run id.
+ */
+function aiarc_debug_log($location, $message, $data = [], $hypothesisId = '', $runId = 'pre-fix')
+{
+    if (!defined('AIARC_DEBUG_SESSION') || AIARC_DEBUG_SESSION !== '65609e') {
+        return;
+    }
+
+    // #region agent log
+    $path = dirname(__FILE__) . '/.cursor/debug-65609e.log';
+    $entry = [
+        'sessionId' => '65609e',
+        'runId' => $runId,
+        'hypothesisId' => $hypothesisId,
+        'location' => $location,
+        'message' => $message,
+        'data' => $data,
+        'timestamp' => (int) round(microtime(true) * 1000),
+    ];
+    @file_put_contents($path, json_encode($entry) . "\n", FILE_APPEND | LOCK_EX);
+    // #endregion
+}
+
+/**
+ * Probe Cloudflare transform response headers for the first URL built this request.
+ */
+function aiarc_debug_probe_cloudflare_responses()
+{
+    if (!defined('AIARC_DEBUG_SESSION') || empty($GLOBALS['aiarc_debug_cf_urls'])) {
+        return;
+    }
+
+    $cf_path = $GLOBALS['aiarc_debug_cf_urls'][0];
+    $absolute = strpos($cf_path, 'http') === 0 ? $cf_path : home_url($cf_path);
+
+    $resp = wp_remote_get($absolute, [
+        'timeout' => 20,
+        'headers' => [
+            'Accept' => 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        ],
+    ]);
+
+    $data = [
+        'request_url' => $absolute,
+        'cf_path' => $cf_path,
+        'url_count' => count($GLOBALS['aiarc_debug_cf_urls']),
+    ];
+
+    if (is_wp_error($resp)) {
+        $data['error'] = $resp->get_error_message();
+        aiarc_debug_log(
+            'acf-image-aspect-ratio-crop-sr.php:aiarc_debug_probe_cloudflare_responses',
+            'Cloudflare probe failed',
+            $data,
+            'D'
+        );
+        return;
+    }
+
+    $data['status'] = wp_remote_retrieve_response_code($resp);
+    $data['content_type'] = wp_remote_retrieve_header($resp, 'content-type');
+    $data['cf_ray'] = wp_remote_retrieve_header($resp, 'cf-ray');
+    $data['cf_cache_status'] = wp_remote_retrieve_header($resp, 'cf-cache-status');
+    $data['content_length'] = wp_remote_retrieve_header($resp, 'content-length');
+    $body = wp_remote_retrieve_body($resp);
+    $data['body_magic'] = $body !== '' ? bin2hex(substr($body, 0, 12)) : '';
+
+    aiarc_debug_log(
+        'acf-image-aspect-ratio-crop-sr.php:aiarc_debug_probe_cloudflare_responses',
+        'Cloudflare probe response',
+        $data,
+        'D'
+    );
+}
+
+add_action('shutdown', 'aiarc_debug_probe_cloudflare_responses', 999);
+
+/**
+ * Track Cloudflare transform paths built during this request.
+ *
+ * @param string $cf_path Transform path or URL.
+ */
+function aiarc_debug_track_cf_url($cf_path)
+{
+    if (!defined('AIARC_DEBUG_SESSION')) {
+        return;
+    }
+
+    if (!isset($GLOBALS['aiarc_debug_cf_urls'])) {
+        $GLOBALS['aiarc_debug_cf_urls'] = [];
+    }
+
+    $GLOBALS['aiarc_debug_cf_urls'][] = $cf_path;
+}
+
+/**
  * Output formats available in plugin settings.
  *
  * @return string[]
@@ -235,8 +357,23 @@ function aiarc_crop_output_format()
         : 'avif';
     $format = strtolower((string) apply_filters('aiarc_crop_output_format', $default));
     $allowed = ['webp', 'avif', 'jpeg', 'png', 'auto'];
+    $resolved = in_array($format, $allowed, true) ? $format : 'avif';
 
-    return in_array($format, $allowed, true) ? $format : 'avif';
+    // #region agent log
+    aiarc_debug_log(
+        'acf-image-aspect-ratio-crop-sr.php:aiarc_crop_output_format',
+        'Resolved crop output format',
+        [
+            'setting_format' => $settings['crop_output_format'] ?? null,
+            'default_before_filter' => $default,
+            'after_filter' => $format,
+            'resolved' => $resolved,
+        ],
+        'B'
+    );
+    // #endregion
+
+    return $resolved;
 }
 
 /**
@@ -408,11 +545,22 @@ function aiarc_crop_source_mime_type()
  */
 function aiarc_cloudflare_format_quality_suffix()
 {
-    return sprintf(
+    $suffix = sprintf(
         ',format=%s,quality=%d',
         aiarc_crop_output_format(),
         aiarc_crop_output_quality()
     );
+
+    // #region agent log
+    aiarc_debug_log(
+        'acf-image-aspect-ratio-crop-sr.php:aiarc_cloudflare_format_quality_suffix',
+        'Cloudflare format/quality suffix',
+        ['suffix' => $suffix],
+        'A'
+    );
+    // #endregion
+
+    return $suffix;
 }
 
 /**
@@ -423,8 +571,24 @@ function aiarc_cloudflare_format_quality_suffix()
 function aiarc_use_cloudflare_transforms()
 {
     $settings = get_option('acf-image-aspect-ratio-crop-settings', []);
+    $enabled = !empty($settings['cloudflare_images']) && aiarc_is_cloudflare_proxy();
 
-    return !empty($settings['cloudflare_images']) && aiarc_is_cloudflare_proxy();
+    // #region agent log
+    if (defined('AIARC_DEBUG_SESSION')) {
+        aiarc_debug_log(
+            'acf-image-aspect-ratio-crop-sr.php:aiarc_use_cloudflare_transforms',
+            'Cloudflare transforms gate',
+            [
+                'cloudflare_images_setting' => !empty($settings['cloudflare_images']),
+                'is_cloudflare_proxy' => aiarc_is_cloudflare_proxy(),
+                'enabled' => $enabled,
+            ],
+            'F'
+        );
+    }
+    // #endregion
+
+    return $enabled;
 }
 
 /**
@@ -573,7 +737,10 @@ function aiarc_cloudflare_crop_url($crop_data, $max_width = 0, $max_height = 0)
         $options .= sprintf(',width=%d,height=%d,fit=scale-down', $dw, $dh);
     }
 
-    return '/cdn-cgi/image/' . $options . aiarc_cloudflare_format_quality_suffix() . '/' . $source;
+    $cf_path = '/cdn-cgi/image/' . $options . aiarc_cloudflare_format_quality_suffix() . '/' . $source;
+    aiarc_debug_track_cf_url($cf_path);
+
+    return $cf_path;
 }
 
 /**
@@ -619,7 +786,23 @@ function aiarc_cloudflare_recrop_url($crop_data, $width, $height, $fit = 'cover'
         aiarc_get_focal_gravity($crop_data)
     );
 
-    return '/cdn-cgi/image/' . $options . aiarc_cloudflare_format_quality_suffix() . '/' . $source;
+    $cf_path = '/cdn-cgi/image/' . $options . aiarc_cloudflare_format_quality_suffix() . '/' . $source;
+
+    // #region agent log
+    aiarc_debug_track_cf_url($cf_path);
+    aiarc_debug_log(
+        'acf-image-aspect-ratio-crop-sr.php:aiarc_cloudflare_recrop_url',
+        'Built Cloudflare recrop URL',
+        [
+            'has_format_avif' => strpos($cf_path, 'format=avif') !== false,
+            'source_extension' => pathinfo(parse_url($source, PHP_URL_PATH), PATHINFO_EXTENSION),
+            'path_length' => strlen($cf_path),
+        ],
+        'C'
+    );
+    // #endregion
+
+    return $cf_path;
 }
 
 /**
@@ -806,7 +989,7 @@ function aiarc_cloudflare_resize_url($source, $max_width = 0, $max_height = 0)
     if ($max_height > 0) {
         $options[] = 'height=' . $max_height;
     }
-    $options[] = 'fit=scale-down';
+    $options[] = 'fit=crop';
 
     return '/cdn-cgi/image/' . implode(',', $options) . '/' . $source;
 }
@@ -949,6 +1132,19 @@ function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
             $cf_url = aiarc_cloudflare_crop_url($crop_data, $max_width, $max_height);
         }
         if ($cf_url !== '') {
+            // #region agent log
+            aiarc_debug_log(
+                'acf-image-aspect-ratio-crop-sr.php:aiarc_crop_url',
+                'Returning Cloudflare transform URL',
+                [
+                    'max_width' => $max_width,
+                    'max_height' => $max_height,
+                    'cf_url_prefix' => substr($cf_url, 0, 120),
+                    'mime_hint' => aiarc_crop_source_mime_type(),
+                ],
+                'A'
+            );
+            // #endregion
             return $cf_url;
         }
     }
