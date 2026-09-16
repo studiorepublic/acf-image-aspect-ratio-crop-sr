@@ -4,7 +4,7 @@
 Plugin Name: Advanced Custom Fields: Image Aspect Ratio Crop (sr)
 Plugin URI: https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr
 Description: ACF field that allows user to crop image to a specific aspect ratio or pixel size
-Version: 1.1.7
+Version: 1.1.8
 Author: Studio Republic - Based on the work of Johannes Siipola
 Author URI: https://www.studiorepublic.com
 License: GPLv2 or later
@@ -65,35 +65,6 @@ function aiarc_get_image_editor($file, $args = [])
     remove_filter('wp_image_editors', $prefer_gd, 999);
 
     return $editor;
-}
-
-/**
- * Append a debug log line for the active agent session (debug mode only).
- *
- * @param string $location
- * @param string $message
- * @param array  $data
- * @param string $hypothesisId
- */
-function aiarc_debug_log($location, $message, $data = [], $hypothesisId = '')
-{
-    $log_path = dirname(AIARC_PLUGIN_FILE) . '/.cursor/debug-7d3f1f.log';
-    // #region agent log
-    file_put_contents(
-        $log_path,
-        wp_json_encode(
-            [
-                'sessionId' => '7d3f1f',
-                'hypothesisId' => $hypothesisId,
-                'location' => $location,
-                'message' => $message,
-                'data' => $data,
-                'timestamp' => (int) round(microtime(true) * 1000),
-            ]
-        ) . "\n",
-        FILE_APPEND | LOCK_EX
-    );
-    // #endregion
 }
 
 /**

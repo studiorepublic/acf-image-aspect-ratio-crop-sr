@@ -4,6 +4,12 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-09-16
+
+### Fixed
+
+- **Duplicate debug logger declaration** — Removed a redundant `aiarc_debug_log()` definition that caused a fatal error when the plugin was loaded.
+
 ## [1.1.7] - 2026-09-16
 
 ### Changed
