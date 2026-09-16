@@ -4,7 +4,7 @@
 Plugin Name: Advanced Custom Fields: Image Aspect Ratio Crop (sr)
 Plugin URI: https://github.com/studiorepublic/acf-image-aspect-ratio-crop-sr
 Description: ACF field that allows user to crop image to a specific aspect ratio or pixel size
-Version: 1.1.6
+Version: 1.1.7
 Author: Studio Republic - Based on the work of Johannes Siipola
 Author URI: https://www.studiorepublic.com
 License: GPLv2 or later
@@ -37,6 +37,34 @@ function aiarc_get_rest_endpoint_urls()
         'get' => rest_url('aiarc/v1/get'),
         'preview' => rest_url('aiarc/v1/preview'),
     ];
+}
+
+/**
+ * Create an image editor for AIARC operations, preferring GD.
+ *
+ * GD produces better AVIF output on some hosts than the available Imagick
+ * delegate. WordPress skips an editor that cannot handle the source or
+ * requested output format, so Imagick remains the fallback when GD is not
+ * available or cannot process the image.
+ *
+ * The editor preference is scoped to this call so AIARC does not change the
+ * image editor used by other WordPress components.
+ *
+ * @param string $file  Image file path or URL.
+ * @param array  $args  Optional editor arguments.
+ * @return WP_Image_Editor|WP_Error
+ */
+function aiarc_get_image_editor($file, $args = [])
+{
+    $prefer_gd = static function ($editors) {
+        return ['WP_Image_Editor_GD', 'WP_Image_Editor_Imagick'];
+    };
+
+    add_filter('wp_image_editors', $prefer_gd, 999);
+    $editor = wp_get_image_editor($file, $args);
+    remove_filter('wp_image_editors', $prefer_gd, 999);
+
+    return $editor;
 }
 
 /**
@@ -117,7 +145,7 @@ function aiarc_generate_preview_image($id, $x, $y, $w, $h)
         );
     }
 
-    $image = wp_get_image_editor($file_path);
+    $image = aiarc_get_image_editor($file_path);
     if (is_wp_error($image)) {
         return $image;
     }
@@ -1056,7 +1084,7 @@ function aiarc_standard_image_url($image, $max_width = 0, $max_height = 0)
         return $url;
     }
 
-    $editor = wp_get_image_editor($source_path);
+    $editor = aiarc_get_image_editor($source_path);
     if (is_wp_error($editor)) {
         return $url;
     }
@@ -1186,7 +1214,7 @@ function aiarc_crop_url($image, $max_width = 0, $max_height = 0)
         return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
     }
 
-    $image = wp_get_image_editor($source_path);
+    $image = aiarc_get_image_editor($source_path);
     if (is_wp_error($image)) {
         return isset($crop_data['original_url']) ? $crop_data['original_url'] : '';
     }
@@ -2518,8 +2546,8 @@ class npx_acf_plugin_image_aspect_ratio_crop
         ) {
             // Handle the new asinine feature in WP 5.3 which resizes images without asking the user. We want the
             // original image so we do "original_image -> crop" instead of "original_image -> resized_image -> crop"
-            $resized_image = wp_get_image_editor($file);
-            $image = wp_get_image_editor(
+            $resized_image = aiarc_get_image_editor($file);
+            $image = aiarc_get_image_editor(
                 wp_get_original_image_path($data['id'])
             );
 
@@ -2545,9 +2573,9 @@ class npx_acf_plugin_image_aspect_ratio_crop
             $scaled_data['width'] = floor($data['width'] * $scale);
             $scaled_data['height'] = floor($data['height'] * $scale);
         } elseif (file_exists($backup_file)) {
-            $image = wp_get_image_editor($backup_file);
+            $image = aiarc_get_image_editor($backup_file);
         } elseif (file_exists($file)) {
-            $image = wp_get_image_editor($file);
+            $image = aiarc_get_image_editor($file);
         } else {
             // Let's attempt to get the file by URL
             $temp_name = wp_generate_uuid4();
@@ -2568,7 +2596,7 @@ class npx_acf_plugin_image_aspect_ratio_crop
                 if (is_wp_error($result)) {
                     throw new Exception('Failed to save image');
                 }
-                $image = wp_get_image_editor($this->temp_path);
+                $image = aiarc_get_image_editor($this->temp_path);
             } catch (Exception $exception) {
                 $this->cleanup();
                 $error_text = 'Failed fetch remote image';

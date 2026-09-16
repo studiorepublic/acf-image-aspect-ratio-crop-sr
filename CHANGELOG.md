@@ -4,6 +4,12 @@ All notable changes to ACF Image Aspect Ratio Crop are documented in this file.
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-09-16
+
+### Changed
+
+- **Prefer GD for image processing** — AIARC now prefers `WP_Image_Editor_GD` for its crop, resize, preview, and cache operations, with `WP_Image_Editor_Imagick` as a fallback when GD is unavailable or cannot process the image. The preference is scoped to AIARC operations and does not change WordPress's global image-editor order.
+
 ## [1.1.6] - 2026-05-20
 
 ### Removed
