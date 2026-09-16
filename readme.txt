@@ -7,7 +7,7 @@ Requires PHP: 5.6
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 Donate link: https://github.com/sponsors/joppuyo
-Stable Tag: 1.1.7
+Stable Tag: 1.1.8
 
 ACF field that allows user to crop image to a specific aspect ratio or pixel size
 
@@ -105,6 +105,9 @@ The other plugin is not actively maintained and does not work well with latest A
 3. Option to re-crop the image after upload
 
 == Changelog ==
+
+= 1.1.8 (2026-09-16) =
+* Fix: Remove duplicate debug logger declaration causing a fatal error
 
 = 1.1.7 (2026-09-16) =
 * Change: Prefer GD for AIARC crop, resize, preview, and cache operations, with Imagick fallback
